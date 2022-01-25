@@ -1,6 +1,6 @@
 # PY65816
 
-A 65816 simulation package running on top of [py65](https://github.com/mnaberez/py65).
+A 65816 simulation package running on top of [py65](https://github.com/mnaberez/py65).  For more detail on the simulation and it's development see https://github.com/tmr4/py65_65816.
 
 # Use
 
