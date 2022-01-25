@@ -1,5 +1,4 @@
-
-"""db65mon -- interact with a simulated 65816-based system
+"""py65816mon -- interact with a simulated 65816-based system
 
 Usage: %s [options]
 
@@ -14,7 +13,6 @@ Options:
 -o, --output <address> : define location of putc (default $f001)
 """
 
-import cmd
 import getopt
 import sys
 
@@ -28,11 +26,6 @@ class dbMonitor(Monitor):
 
     Monitor.Microprocessors["65C816"] = CMOS65C816
 
-#    def __init__(self, argv=['db_monitor.py', '-m', '65c816', '-r', 'forth.bin', '-i', '7fc0', '-o', '7fe0', '-d'],
-#    def __init__(self, argv=['db_monitor.py', '-m', '65c816', '-r', 'forth.bin', '-i', '7fc0', '-o', '7fe0'],
-#                       stdin=None, stdout=None,
-#                       mpu_type=CMOS65C816, memory=None,
-#                       putc_addr=0xfff1, getc_addr=0xfff0):
     def __init__(self, argv=None, stdin=None, stdout=None,
                        mpu_type=CMOS65C816, memory=None,
                        putc_addr=0xF001, getc_addr=0xF004):
@@ -52,14 +45,16 @@ class dbMonitor(Monitor):
                 if opt in ('-d', '--debug'):
                     self.dbWin = True
 
+                if opt in ("-h", "--help"):
+                    self._usage()
+                    self._exit(0)
+
         except:
             raise
 
         if self.dbWin:
             argv.pop()
 
-        #Monitor.__init__(argv, stdin, stdout, mpu_type, memory, putc_addr, getc_addr)
-        #super().__init__(self)
         super().__init__(argv, stdin, stdout, mpu_type, memory, putc_addr, getc_addr)
 
         self._shortcuts['d'] = 'debug'
@@ -79,7 +74,6 @@ class dbMonitor(Monitor):
         self._output("\n65816 Debug Monitor")
 
     def _reset(self, mpu_type, getc_addr=0xF004, putc_addr=0xF001):
-        #Monitor._reset(mpu_type, getc_addr, putc_addr)
         super()._reset(mpu_type, getc_addr, putc_addr)
 
         if self.dbWin:
@@ -96,14 +90,13 @@ class dbMonitor(Monitor):
         else:
             super()._run(stopcodes)
 
+    def _usage(self):
+        usage = __doc__ % sys.argv[0]
+        print(usage)
+
+
 def main(args=None):
     c = dbMonitor()
-
-#    try:
-#        import readline
-#        readline = readline  # pyflakes
-#    except ImportError:
-#        pass
 
     try:
         c.onecmd('version')
