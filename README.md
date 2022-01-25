@@ -24,4 +24,4 @@ Options:
 -o, --output <address> : define location of putc (default $f001)
 ````
 
-View unit test coverage with `nose2 --with-coverage'
+View unit test coverage with `nose2 --with-coverage`
