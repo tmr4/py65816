@@ -8,6 +8,7 @@ Clone, then install locally with `pip install -e .`
 
 Run similarly to py65mon.  For example, get help with `py65816mon -h`.
 
+````
 py65816mon -- interact with a simulated 65816-based system
 
 Usage: py65816mon [options]
@@ -21,3 +22,6 @@ Options:
 -g, --goto <address>   : Perform a goto command after loading any files
 -i, --input <address>  : define location of getc (default $f004)
 -o, --output <address> : define location of putc (default $f001)
+````
+
+View unit test coverage with `nose2 --with-coverage'
