@@ -512,6 +512,44 @@ class Common65816NativeTests:
         mpu.step()
         self.assertEqual(0x0001, mpu.pc)
 
+    # PEA Stack Absolute
+
+    def test_pea_pushes_operand(self):
+        mpu = self._make_mpu()
+        # $0000 PEA $ABCD
+        self._write(mpu.memory, 0x0000, (0xF4, 0xCD, 0xAB))
+        mpu.step()
+        self.assertEqual(0x0003, mpu.pc)
+        self.assertEqual(0xAB, mpu.memory[0x1FF])
+        self.assertEqual(0xCD, mpu.memory[0x1FE])
+        self.assertEqual(0x1FD, mpu.sp)
+
+    # PEI Stack Direct Page Indirect
+
+    def test_pei_pushes_dpr_plus_operand_indirect(self):
+        mpu = self._make_mpu()
+        # $0000 PEI $10
+        self._write(mpu.memory, 0x0000, (0xD4, 0x10))
+        self._write(mpu.memory, 0x0010, (0xCD, 0xAB))
+        mpu.step()
+        self.assertEqual(0x0002, mpu.pc)
+        self.assertEqual(0xAB, mpu.memory[0x1FF])
+        self.assertEqual(0xCD, mpu.memory[0x1FE])
+        self.assertEqual(0x1FD, mpu.sp)
+
+    # PER Program Counter Relative Indirect
+
+    def test_per_pushes_operand_plus_pc(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0x10
+        # $0010 PER $ABCD
+        self._write(mpu.memory, 0x0010, (0x62, 0xCD, 0xAB))
+        mpu.step()
+        self.assertEqual(0x0013, mpu.pc)
+        self.assertEqual(0xAB, mpu.memory[0x1FF])
+        self.assertEqual(0xDE, mpu.memory[0x1FE])
+        self.assertEqual(0x1FD, mpu.sp)
+
     # PHB
 
     def test_phb_pushes_b_and_updates_sp(self):
