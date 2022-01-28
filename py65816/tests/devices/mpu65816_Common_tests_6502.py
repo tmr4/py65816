@@ -5,6 +5,20 @@ class Common6502Tests:
 
     # ADC Absolute
 
+    def test_adc_bcd_off_absolute_carry_clear_in_accumulator_zeroes(self):
+        mpu = self._make_mpu()
+        mpu.a = 0
+        # $0000 ADC $C000
+        self._write(mpu.memory, 0x0000, (0x6D, 0x00, 0xC0))
+
+        mpu.memory[0xC000] = 0x00
+        mpu.step()
+        self.assertEqual(0x0003, mpu.pc)
+        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(0, mpu.p & mpu.CARRY)
+        self.assertEqual(0, mpu.p & mpu.NEGATIVE)
+        self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+
     def test_adc_bcd_off_absolute_carry_set_in_accumulator_zero(self):
         mpu = self._make_mpu()
         mpu.a = 0

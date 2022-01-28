@@ -24,4 +24,14 @@ Options:
 -o, --output <address> : define location of putc (default $f001)
 ````
 
-View unit test coverage with `nose2 --with-coverage`
+# Status
+1. About 97% of the code for the new 65C816 device is covered by unit tests and the device has passed them all.  Some known issues/limitations:
+    * Extra cycle counts haven't been considered for any new to 65816 opcodes.
+    * ADC and SBC in decimal mode are likely invalid in 16 bit.
+    * Page and bank wrapping needs tested.
+    * Some instructions operating in mixed register modes haven't been tested.
+    * PEA and companion instructions haven't been tested.  At this point, assume they don't work properly.
+    * Move block instructions haven't been tested in 8-bit mode.
+    * New 65816 instructions have generally not been tested in emulation mode.
+
+View unit test coverage with `nose2 --with-coverage` or `nose2 --with-coverage --coverage-report html` for an html report.

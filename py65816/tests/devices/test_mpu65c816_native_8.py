@@ -3,9 +3,10 @@ import sys
 from py65816.devices.mpu65c816 import MPU
 from py65816.tests.devices.mpu65816_Common_tests_6502 import Common6502Tests
 from py65816.tests.devices.mpu65816_Common_tests_65c02 import Common65C02Tests
+from py65816.tests.devices.mpu65816_Common_tests_native import Common65816NativeTests
 
-# 2 tests
-class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
+# x tests
+class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests, Common65816NativeTests):
 #class MPUTests(unittest.TestCase):
     """CMOS 65C816 Tests - Native Mode - 8 Bit"""
 
@@ -17,31 +18,55 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
 
     # Reset
 
-    def test_reset_sets_registers_to_initial_states(self):
+    def test_make_mpu(self):
+        # test that we haven't changed key make_mpu assumptions
+        # _make_mpu should:
+        #   * set native mode
+        #   * set 8 bit registers
+        #   * clear carry
+        #   * set sp to 0x1ff
+        #   * set memory to 0x30000 * [0xAA]
         mpu = self._make_mpu()
-        mpu.reset()
-        #self.assertEqual(0xFF, mpu.sp)
-        self.assertEqual(0, mpu.a)
-        self.assertEqual(0, mpu.x)
-        self.assertEqual(0, mpu.y)
-        self.assertEqual(mpu.MS | mpu.IRS, mpu.p)
-
-    # ADC Absolute
-
-    def test_adc_bcd_off_absolute_carry_clear_in_accumulator_zeroes(self):
-        mpu = self._make_mpu()
-        mpu.a = 0
-        # $0000 ADC $C000
-        self._write(mpu.memory, 0x0000, (0x6D, 0x00, 0xC0))
-        self.assertEqual(0x30000, len(mpu.memory))
-
-        mpu.memory[0xC000] = 0x00
-        mpu.step()
-        self.assertEqual(0x0003, mpu.pc)
-        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(0, mpu.mode)
+        self.assertEqual(mpu.MS, mpu.p & mpu.MS)
+        self.assertEqual(mpu.IRS, mpu.p & mpu.IRS)
         self.assertEqual(0, mpu.p & mpu.CARRY)
-        self.assertEqual(0, mpu.p & mpu.NEGATIVE)
-        self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+        self.assertEqual(0x1ff, mpu.sp)
+        for addr in range(0x30000):
+            self.assertEqual(0xAA, mpu.memory[addr])
+
+    def test_reset_sets_registers_to_initial_states(self):
+        # W65C816S Datasheet, Nov 9, 2018, section 2.25
+        mpu = self._make_mpu()
+        mpu.dpr = 0xFFFF
+        mpu.dbr = 0xFF
+        mpu.pbr = 0xFF
+        mpu.mode = 0
+        mpu.p = mpu.DECIMAL
+        self._write(mpu.memory, 0xFFFC, (0x34, 0x12)) # reset vector
+        
+        # reset doesn't initialize a,x,y,sp
+        # but sets high x,y bytes to 0 and high sp byte to 1
+        # these can't be explicitly tested since I don't model individual bytes
+        # also can't test A since I initialize it so it's in a known state
+        # would be interesting to see what the chip actually does with A
+        #mpu.a = 0xFFFF 
+        #mpu.x = 0xFFFF 
+        #mpu.y = 0xFFFF 
+        #mpu.sp = 0xFFFF 
+
+        mpu.reset()
+        self.assertEqual(1, mpu.mode)
+        self.assertEqual(0, mpu.dpr)
+        self.assertEqual(0, mpu.dbr)
+        self.assertEqual(0, mpu.pbr)
+        #self.assertEqual(0xFFFF, mpu.a)
+        #self.assertEqual(0x00, mpu.x & 0xff00)
+        #self.assertEqual(0x00, mpu.y & 0xff00)
+        #self.assertEqual(0x100, mpu.sp & 0xff00)
+        self.assertEqual(mpu.BREAK | mpu.UNUSED | mpu.INTERRUPT, mpu.p) # includes mpu.DECIMAL test
+        #self.assertEqual(mpu.CARRY, mpu.p & mpu.CARRY) # the datasheet show carry set but indicates it doesn't initialize it *** TODO: what does the hardware really do? ***
+        self.assertEqual(0x1234, mpu.pc)
 
     # BRK
 
@@ -56,7 +81,6 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
 
     def test_brk_interrupt(self):
         mpu = self._make_mpu()
-        #mpu.p = 0x60 # bits 4 and 5 always set in emulation mode
         self._write(mpu.memory, 0xFFE6, (0x00, 0x04))
 
         self._write(mpu.memory, 0x0000, (0xA9, 0x01,   # LDA #$01
@@ -91,31 +115,36 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         # $C000 BRK
         mpu.memory[0xC000] = 0x00
         mpu.pc = 0xC000
+        p = mpu.p
         mpu.step()
         self.assertEqual(0xABCD, mpu.pc)
 
         self.assertEqual(0x00, mpu.memory[0x1FF])  # PBR
         self.assertEqual(0xC0, mpu.memory[0x1FE])  # PCH
         self.assertEqual(0x02, mpu.memory[0x1FD])  # PCL
-        self.assertEqual(mpu.MS | mpu.IRS, mpu.memory[0x1FC])  # Status
+        self.assertEqual(mpu.p, mpu.memory[0x1FC])  # Status
         self.assertEqual(0x1FB, mpu.sp)
 
         self.assertEqual(mpu.MS | mpu.IRS | mpu.INTERRUPT, mpu.p)
 
     # IRQ and NMI handling (very similar to BRK)
 
-    def test_irq_pushes_pc_and_correct_status_then_sets_pc_to_irq_vector(self):
+    def test_irq_pushes_pbr_pc_and_correct_status_then_sets_pc_to_irq_vector(self):
         mpu = self._make_mpu()
         self._write(mpu.memory, 0xFFEA, (0x88, 0x77))
         self._write(mpu.memory, 0xFFEE, (0xCD, 0xAB))
+
+        mpu.pCLR(mpu.INTERRUPT) # enable interrupts
         mpu.pc = 0xC123
+        mpu.pbr = 1
         mpu.irq()
         self.assertEqual(0xABCD, mpu.pc)
-        self.assertEqual(0x00, mpu.memory[0x1FF])  # PBR
+        self.assertEqual(0x01, mpu.memory[0x1FF])  # PBR
         self.assertEqual(0xC1, mpu.memory[0x1FE])  # PCH
         self.assertEqual(0x23, mpu.memory[0x1FD])  # PCL
         self.assertEqual(mpu.MS | mpu.IRS, mpu.memory[0x1FC])  # Status
         self.assertEqual(0x1FB, mpu.sp)
+        self.assertEqual(0, mpu.pbr)
         self.assertEqual(mpu.MS | mpu.IRS | mpu.INTERRUPT, mpu.p)
         self.assertEqual(7, mpu.processorCycles)
 
@@ -123,14 +152,17 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         mpu = self._make_mpu()
         self._write(mpu.memory, 0xFFEA, (0x88, 0x77))
         self._write(mpu.memory, 0xFFEE, (0xCD, 0xAB))
+        mpu.p |= mpu.INTERRUPT # disable interrupts
         mpu.pc = 0xC123
+        mpu.pbr = 1
         mpu.nmi()
         self.assertEqual(0x7788, mpu.pc)
-        self.assertEqual(0x00, mpu.memory[0x1FF])  # PBR
+        self.assertEqual(0x01, mpu.memory[0x1FF])  # PBR
         self.assertEqual(0xC1, mpu.memory[0x1FE])  # PCH
         self.assertEqual(0x23, mpu.memory[0x1FD])  # PCL
-        self.assertEqual(mpu.MS | mpu.IRS, mpu.memory[0x1FC])  # Status
+        self.assertEqual(mpu.MS | mpu.IRS | mpu.INTERRUPT, mpu.memory[0x1FC])  # Status
         self.assertEqual(0x1FB, mpu.sp)
+        self.assertEqual(0, mpu.pbr)
         self.assertEqual(mpu.MS | mpu.IRS | mpu.INTERRUPT, mpu.p)
         self.assertEqual(7, mpu.processorCycles)
 
@@ -242,6 +274,7 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         self.assertEqual(0x1FF,   mpu.sp)
 
     # PLP
+    # *** TODO: need to test for 8/16 bit mix ***
 
     def test_plp_pulls_top_byte_from_stack_into_flags_and_updates_sp(self):
         mpu = self._make_mpu()
@@ -307,6 +340,307 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         mpu.step()
         self.assertEqual(0x0000, mpu.pc)
         self.assertEqual(0x1FF,   mpu.sp)
+
+    # TCD
+
+    def test_tcd_transfers_accumulator_into_d(self):
+        mpu = self._make_mpu()
+        mpu.a = 0xCD
+        mpu.b = 0xAB
+        # $0000 TCD
+        mpu.memory[0x0000] = 0x5B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xCD, mpu.a)
+        self.assertEqual(0xAB, mpu.b)
+        self.assertEqual(0xABCD, mpu.dpr)
+
+    def test_tcd_sets_negative_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.NEGATIVE)
+        mpu.a = 0x000
+        mpu.b = 0x80
+        # $0000 TCD
+        mpu.memory[0x0000] = 0x5B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(0x80, mpu.b)
+        self.assertEqual(0x8000, mpu.dpr)
+        self.assertEqual(mpu.NEGATIVE, mpu.p & mpu.NEGATIVE)
+
+    def test_tcd_sets_zero_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.ZERO)
+        mpu.a = 0x00
+        mpu.b = 0x00
+        # $0000 TCD
+        mpu.memory[0x0000] = 0x5B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(0x00, mpu.b)
+        self.assertEqual(0x00, mpu.dpr)
+        self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+
+    # TCS
+
+    def test_tcs_transfers_accumulator_into_s(self):
+        mpu = self._make_mpu()
+        mpu.b = 0xAB
+        mpu.a = 0xCD
+        # $0000 TCS
+        mpu.memory[0x0000] = 0x1B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xCD, mpu.a)
+        self.assertEqual(0xABCD, mpu.sp)
+
+    def test_tcs_does_not_set_negative_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.NEGATIVE)
+        mpu.a = 0x80
+        # $0000 TCS
+        mpu.memory[0x0000] = 0x1B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x80, mpu.a)
+        self.assertEqual(0x80, mpu.sp)
+        self.assertEqual(0, mpu.p & mpu.NEGATIVE)
+
+    def test_tcs_does_not_set_zero_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.ZERO)
+        mpu.a = 0x00
+        # $0000 TCS
+        mpu.memory[0x0000] = 0x1B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(0x00, mpu.sp)
+        self.assertEqual(0, mpu.p & mpu.ZERO)
+
+    # TDC
+
+    def test_tdc_transfers_d_to_accumulator(self):
+        mpu = self._make_mpu()
+        mpu.dpr = 0xABCD
+        # $0000 TDC
+        mpu.memory[0x0000] = 0x7B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xCD, mpu.a)
+        self.assertEqual(0xAB, mpu.b)
+        self.assertEqual(0xABCD, mpu.dpr)
+
+    def test_tdc_sets_negative_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.NEGATIVE)
+        mpu.dpr = 0x8000
+        # $0000 TDC
+        mpu.memory[0x0000] = 0x7B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(0x80, mpu.b)
+        self.assertEqual(0x8000, mpu.dpr)
+        self.assertEqual(mpu.NEGATIVE, mpu.p & mpu.NEGATIVE)
+
+    def test_tdc_sets_zero_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.ZERO)
+        mpu.dpr = 0x00
+        # $0000 TDC
+        mpu.memory[0x0000] = 0x7B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(0x00, mpu.b)
+        self.assertEqual(0x00, mpu.dpr)
+        self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+
+    # TSC
+
+    def test_tsc_transfers_accumulator_into_s(self):
+        mpu = self._make_mpu()
+        mpu.sp = 0xABCD
+        # $0000 TSC
+        mpu.memory[0x0000] = 0x3B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xCD, mpu.a)
+        self.assertEqual(0xAB, mpu.b)
+        self.assertEqual(0xABCD, mpu.sp)
+
+    def test_tsc_sets_negative_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.NEGATIVE)
+        mpu.sp = 0x8000
+        # $0000 TSC
+        mpu.memory[0x0000] = 0x3B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(0x80, mpu.b)
+        self.assertEqual(0x8000, mpu.sp)
+        self.assertEqual(mpu.NEGATIVE, mpu.p & mpu.NEGATIVE)
+
+    def test_tsc_sets_zero_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.ZERO)
+        mpu.sp = 0x00
+        # $0000 TSC
+        mpu.memory[0x0000] = 0x3B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(0x00, mpu.b)
+        self.assertEqual(0x00, mpu.sp)
+        self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+
+    # TXY
+
+    def test_txy_transfers_x_into_a(self):
+        mpu = self._make_mpu()
+        mpu.x = 0xAB
+        mpu.y = 0x00
+        # $0000 TXY
+        mpu.memory[0x0000] = 0x9B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xAB, mpu.y)
+        self.assertEqual(0xAB, mpu.x)
+
+    def test_txy_sets_negative_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.NEGATIVE)
+        mpu.x = 0x80
+        mpu.y = 0x00
+        # $0000 TXY
+        mpu.memory[0x0000] = 0x9B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x80, mpu.y)
+        self.assertEqual(0x80, mpu.x)
+        self.assertEqual(mpu.NEGATIVE, mpu.p & mpu.NEGATIVE)
+
+    def test_txy_sets_zero_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.ZERO)
+        mpu.x = 0x00
+        mpu.y = 0xFF
+        # $0000 TXY
+        mpu.memory[0x0000] = 0x9B
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x00, mpu.y)
+        self.assertEqual(0x00, mpu.x)
+        self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+
+    # TYX
+
+    def test_tyx_transfers_x_into_a(self):
+        mpu = self._make_mpu()
+        mpu.y = 0xAB
+        mpu.x = 0x00
+        # $0000 TYX
+        mpu.memory[0x0000] = 0xBB
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xAB, mpu.y)
+        self.assertEqual(0xAB, mpu.x)
+
+    def test_tyx_sets_negative_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.NEGATIVE)
+        mpu.y = 0x80
+        mpu.x = 0x00
+        # $0000 TYX
+        mpu.memory[0x0000] = 0xBB
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x80, mpu.y)
+        self.assertEqual(0x80, mpu.x)
+        self.assertEqual(mpu.NEGATIVE, mpu.p & mpu.NEGATIVE)
+
+    def test_tyx_sets_zero_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.ZERO)
+        mpu.y = 0x00
+        mpu.x = 0xFF
+        # $0000 TYX
+        mpu.memory[0x0000] = 0xBB
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x00, mpu.y)
+        self.assertEqual(0x00, mpu.x)
+        self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+
+    # XBA
+
+    def test_xba_exchanges_b_and_a(self):
+        mpu = self._make_mpu()
+        mpu.b = 0xAB
+        mpu.a = 0xCD
+        # $0000 XBA
+        mpu.memory[0x0000] = 0xEB
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xCD, mpu.b)
+        self.assertEqual(0xAB, mpu.a)
+
+    def test_xba_sets_negative_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.NEGATIVE)
+        mpu.a = 0x80
+        mpu.b = 0x00
+        # $0000 XBA
+        mpu.memory[0x0000] = 0xEB
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x80, mpu.b)
+        self.assertEqual(0x00, mpu.a)
+        self.assertEqual(mpu.NEGATIVE, mpu.p & mpu.NEGATIVE)
+
+    def test_xba_sets_zero_flag(self):
+        mpu = self._make_mpu()
+        mpu.p &= ~(mpu.ZERO)
+        mpu.b = 0xFF
+        mpu.a = 0x00
+        # $0000 XBA
+        mpu.memory[0x0000] = 0xEB
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xFF, mpu.a)
+        self.assertEqual(0x00, mpu.b)
+        self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+
+    # XCE
+
+    def test_xce_exchange_c_and_e_bits(self):
+        mpu = self._make_mpu() # native mode, carry is cleared
+
+        mpu.pSET(mpu.CARRY)
+
+        mpu.memory[0x0000] = 0xFB
+        mpu.step()
+        self.assertEqual(0, mpu.p & mpu.CARRY)
+        self.assertEqual(mpu.MS, mpu.p & mpu.MS)
+        self.assertEqual(mpu.IRS, mpu.p & mpu.IRS)
+        self.assertEqual(1, mpu.mode)
+
+    def test_xce_forces_a_to_8_bits(self):
+        mpu = self._make_mpu() # native mode, carry is cleared
+
+        mpu.a = 0xabcd
+        mpu.pSET(mpu.CARRY)
+
+        mpu.memory[0x0000] = 0xFB
+        mpu.step()
+        self.assertEqual(0, mpu.p & mpu.CARRY)
+        self.assertEqual(1, mpu.mode)
+        self.assertEqual(0xcd, mpu.a)
+        self.assertEqual(0xab, mpu.b)
 
 
 
