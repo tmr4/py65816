@@ -15,7 +15,7 @@ Usage: py65816mon [options]
 
 Options:
 -h, --help             : Show this message
--d, --debug            : Toggle debug window
+-d, --debug            : Open debug window
 -m, --mpu <device>     : Choose which MPU device (default is 6502)
 -l, --load <file>      : Load a file at address 0
 -r, --rom <file>       : Load a rom at the top of address space and reset into it

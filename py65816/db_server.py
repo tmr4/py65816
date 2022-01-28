@@ -9,7 +9,7 @@ from py65.utils.conversions import itoa
 class db_server():
 
 #    def __init__(self, mon, mpu, interrupts):
-    def __init__(self, mon, mpu, dbWin):
+    def __init__(self, mon, mpu, dbWin=False):
         self.mon = mon
         self.mpu = mpu
 #        self.interrupts = interrupts
