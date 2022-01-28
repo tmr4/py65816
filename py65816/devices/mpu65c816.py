@@ -106,8 +106,7 @@ class MPU:
         self.x = 0
         self.y = 0
 
-        self.p = self.BREAK | self.UNUSED
-#        self.p = self.BREAK | self.UNUSED | self.INTERRUPT
+        self.p = self.BREAK | self.UNUSED | self.INTERRUPT
         self.processorCycles = 0
 
         self.mode = 1
@@ -116,8 +115,7 @@ class MPU:
         self.dpr = 0
 
     def irq(self):
-        # triggers a normal IRQ
-        # this is very similar to the BRK instruction
+        # triggers an IRQ
         if self.p & self.INTERRUPT:
             return
 
@@ -136,8 +134,7 @@ class MPU:
         self.processorCycles += 7
 
     def nmi(self):
-        # triggers a NMI IRQ in the processor
-        # this is very similar to the BRK instruction
+        # triggers an NMI in the processor
         if self.mode:
             self.p &= ~self.BREAK
             self.p | self.UNUSED
@@ -426,7 +423,7 @@ class MPU:
         self.pc = (self.pbr << self.ADDR_WIDTH) + addr & self.addrMask
 
     def ProgramCounterRelLongAddr(self): # "prl" (1 opcode)
-        self.excycles += 1
+        #self.excycles += 1
         offset = self.OperandWord()
         self.incPC()
 
@@ -436,8 +433,8 @@ class MPU:
             addr = self.pc + offset
 
         # *** TODO: verify this extra cycle ***
-        if (self.pc & self.addrHighMask) != (addr & self.addrHighMask):
-            self.excycles += 1
+        #if (self.pc & self.addrHighMask) != (addr & self.addrHighMask):
+        #    self.excycles += 1
 
         self.pc = (self.pbr << self.ADDR_WIDTH) + addr & self.addrMask
 
@@ -1220,8 +1217,9 @@ class MPU:
     def inst_0x22(self):
         self.stPush(self.pbr)
         self.stPushWord((self.pc + 2) & self.addrMask)
-        self.pbr = self.ByteAt(self.pc + 2)
+        pbr = self.ByteAt(self.pc + 2)
         self.pc = self.OperandWord()
+        self.pbr = pbr
 
     @instruction(name="AND", mode="str", cycles=4) # new to 65816
     def inst_0x23(self):
@@ -1574,8 +1572,9 @@ class MPU:
 
     @instruction(name="JML", mode="abl", cycles=4)  # new to 65816
     def inst_0x5c(self):
-        self.pbr = self.ByteAt(self.pc + 2)
+        pbr = self.ByteAt(self.pc + 2)
         self.pc = self.OperandWord()
+        self.pbr = pbr
 
     @instruction(name="EOR", mode="abx", cycles=4, extracycles=1)
     def inst_0x5d(self):
@@ -1797,7 +1796,7 @@ class MPU:
         self.opSTX(self.DirectPageAddr)
         self.incPC()
 
-    @instruction(name="STA", mode="dil", cycles=2) # new to 65816
+    @instruction(name="STA", mode="dil", cycles=6) # new to 65816
     def inst_0x87(self):
         self.opSTA(self.DirectPageIndirectLongAddr)
         self.incPC()
@@ -2323,16 +2322,15 @@ class MPU:
     def inst_0xdb(self):
         # *** TODO: need to implement stop the processor ***
         # *** and wait for reset pin to be pulled low    ***
-        # *** for now just reset ***
-        self.reset()
+        # *** for now just wait ***
+        self.waiting = True
 
     @instruction(name="JML", mode="ail", cycles=6)  # new to 65816
     def inst_0xdc(self):
         addr = self.OperandWord()
-#        self.pbr = self.ByteAt(self.pc + 2)
-#        self.pc = self.WordAt(self.OperandWord())
-        self.pbr = self.ByteAt(addr + 2)
+        pbr = self.ByteAt(addr + 2)
         self.pc = self.WordAt(addr)
+        self.pbr = pbr
 
     @instruction(name="CMP", mode="abx", cycles=4, extracycles=1)
     def inst_0xdd(self):
@@ -2427,9 +2425,8 @@ class MPU:
         a = self.a & self.byteMask
 
         if self.p & self.MS: # 8 bit
-            b = self.b
-            self.a = b
-            self.b = a
+            self.a = self.b
+            self.b = b = a
         else: # 16 bits
             b = (self.a >> self.BYTE_WIDTH) & self.byteMask
             self.a = (a << self.BYTE_WIDTH) + b
