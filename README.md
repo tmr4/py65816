@@ -1,6 +1,6 @@
 # PY65816
 
-A 65816 simulation package running on top of [py65](https://github.com/mnaberez/py65).  For more detail on the simulation and it's development see https://github.com/tmr4/py65_65816.
+A 65816 simulation package running on top of [py65](https://github.com/mnaberez/py65).
 
 # Features
 
@@ -13,9 +13,9 @@ A 65816 simulation package running on top of [py65](https://github.com/mnaberez/
 # Development
 
 I began developing these as separate enhancements to py65.  You can get some background and use/testing information on each at:
-    * [65816](https://github.com/tmr4/py65_65816)
-    * [Debug Window]((https://github.com/tmr4/py65_debug_window)
-    * [Interrupts](https://github.com/tmr4/py65_int)
+* [65816](https://github.com/tmr4/py65_65816)
+* [Debug Window](https://github.com/tmr4/py65_debug_window)
+* [Interrupts](https://github.com/tmr4/py65_int)
 
 This repo pulls them all together into a single package separate from py65.
 
