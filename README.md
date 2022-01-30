@@ -56,5 +56,5 @@ The py65816 monitor inherits from the py65 monitor so most monitor functions sho
     * Move block instructions haven't been tested in 8-bit mode.
     * New 65816 instructions have generally not been tested in emulation mode.
 2. Interrupt handling is very limited, mainly just enough for my own requirements.  But it isn't hard to add other capabilities.  The main consideration is the source of the interrupt trigger.  For example, in my build I use the 65C22 shift register to capture a byte sent from a keyboard controller.  When the shift register receives a complete byte it requests an interrupt from the 6502.  I've modeled the shift register here in a similar way.  It will trigger an interrupt when a keystroke is available.
-3. See [Debug Window]((https://github.com/tmr4/py65_debug_window) for some of its limitations.
+3. See [Debug Window](https://github.com/tmr4/py65_debug_window) for some of its limitations.
 
