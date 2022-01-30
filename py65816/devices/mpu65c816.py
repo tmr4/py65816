@@ -5,6 +5,10 @@ from py65.utils.devices import make_instruction_decorator
 #   Registers
 #       a: represents both 8 and 16 bit accumulator (the 65816 C register is not modeled separately)
 #       b: only valid in 8 bit mode (otherwise use high byte of a)
+#     x,y: represent both 8 and 16 bit registers. Note that processor flags bit 4 alone cannot indicate
+#          whether we are in 8 or 16 bit as during an interrupt this bit will be cleared and instructions
+#          would consider the registers as 16-bit even though they are 8-bit.  Thus code checks both 
+#          processor flags bit 4 and mode where appropriate.
 #
 class MPU:
     # vectors
@@ -57,6 +61,7 @@ class MPU:
         #self.start_pc = 0xfffc
         self.start_pc = pc
         self.sp = 0
+        self.IRQ_pin = 1
 
         # init
         self.reset()
@@ -85,6 +90,9 @@ class MPU:
         if self.waiting:
             self.processorCycles += 1
         else:
+            if (self.IRQ_pin == 0) and (self.p & self.INTERRUPT == 0):
+                self.irq()
+                self.IRQ_pin = 1
             instructCode = self.memory[self.pc]
             self.incPC()
             self.excycles = 0
@@ -592,7 +600,12 @@ class MPU:
             self.p |= (tbyte >> self.BYTE_WIDTH) & (self.NEGATIVE | self.OVERFLOW)
 
     def opCMP(self, addr, register_value, bit_flag):
-        if self.p & bit_flag:
+        if bit_flag == self.IRS and self.mode:
+            bit_flag = 1
+        else:
+            bit_flag = self.p & bit_flag
+
+        if bit_flag:
             tbyte = self.ByteAt(addr())
         else:
             tbyte = self.WordAt(addr())
@@ -601,7 +614,7 @@ class MPU:
             self.p |= self.CARRY | self.ZERO
         elif register_value > tbyte:
             self.p |= self.CARRY
-        if self.p & bit_flag:
+        if bit_flag:
             self.p |= (register_value - tbyte) & self.NEGATIVE
         else:
             self.p |= ((register_value - tbyte) >> self.BYTE_WIDTH) & self.NEGATIVE
@@ -687,7 +700,7 @@ class MPU:
             self.FlagsNZWord(self.a)
 
     def opLDX(self, y):
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.x = self.ByteAt(y())
             self.FlagsNZ(self.x)
         else:
@@ -695,7 +708,7 @@ class MPU:
             self.FlagsNZWord(self.x)
 
     def opLDY(self, x):
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.y = self.ByteAt(x())
             self.FlagsNZ(self.y)
         else:
@@ -740,7 +753,7 @@ class MPU:
         self.memory[dbr + self.y] = self.memory[sbr + self.x]
         self.x += inc
         self.y += inc
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.x &= self.byteMask
             self.y &= self.byteMask
         else:
@@ -928,7 +941,7 @@ class MPU:
     # *** TODO: do we really need this here? can x/y MSB be non-zero when IRS is 1? ***
     def opSTX(self, y):
         addr = y()
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.memory[addr] = self.x & self.byteMask
         else:
             self.memory[addr] = self.x & self.byteMask
@@ -937,7 +950,7 @@ class MPU:
     # *** TODO: do we really need this here? can x/y MSB be non-zero when IRS is 1? ***
     def opSTY(self, x):
         addr = x()
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.memory[addr] = self.y & self.byteMask
         else:
             self.memory[addr] = self.y & self.byteMask
@@ -945,7 +958,7 @@ class MPU:
 
     def opSTZ(self, x):
         addr = x()
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.memory[addr] = 0x00
         else:
             self.memory[addr] = 0x00
@@ -1262,7 +1275,7 @@ class MPU:
                     self.a = (self.b << self.BYTE_WIDTH) + self.a
                     self.b = 0
             if p & self.IRS != self.p & self.IRS:
-                if self.p & self.IRS:
+                if (self.p & self.IRS) or self.mode:
                     # X,Y 16 => 8, truncate X,Y
                     self.x = self.x & self.byteMask
                     self.y = self.y & self.byteMask
@@ -1554,7 +1567,7 @@ class MPU:
 
     @instruction(name="PHY", mode="stk", cycles=3)
     def inst_0x5a(self):
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.stPush(self.y)
         else:
             self.stPushWord(self.y)
@@ -1725,7 +1738,7 @@ class MPU:
 
     @instruction(name="PLY", mode="stk", cycles=4)
     def inst_0x7a(self):
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.y = self.stPop()
             self.FlagsNZ(self.y)
         else:
@@ -1804,7 +1817,7 @@ class MPU:
     @instruction(name="DEY", mode="imp", cycles=2)
     def inst_0x88(self):
         self.y -= 1
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.y &= self.byteMask
             self.FlagsNZ(self.y)
         else:
@@ -1928,7 +1941,7 @@ class MPU:
         if self.mode:
             self.sp = self.x
         else:
-            if self.p & self.IRS:
+            if (self.p & self.IRS) or self.mode:
                 # sp high byte is zero
                 self.sp = self.x & self.byteMask
             else:
@@ -1937,7 +1950,7 @@ class MPU:
     @instruction(name="TXY", mode="imp", cycles=2) # new to 65816
     def inst_0x9b(self):
         self.y = self.x
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.FlagsNZ(self.y)
         else:
             self.FlagsNZWord(self.y)
@@ -1965,7 +1978,7 @@ class MPU:
     @instruction(name="LDY", mode="imm", cycles=2)
     def inst_0xa0(self):
         self.opLDY(self.ImmediateAddr)
-        self.incPC(2 - ((self.p & self.IRS)>>4))
+        self.incPC(2 - (((self.p & self.IRS)>>4) or self.mode))
 
     @instruction(name="LDA", mode="dix", cycles=6)
     def inst_0xa1(self):
@@ -1975,7 +1988,7 @@ class MPU:
     @instruction(name="LDX", mode="imm", cycles=2)
     def inst_0xa2(self):
         self.opLDX(self.ImmediateAddr)
-        self.incPC(2 - ((self.p & self.IRS)>>4))
+        self.incPC(2 - (((self.p & self.IRS)>>4) or self.mode))
 
     @instruction(name="LDA", mode="str", cycles=4) # new to 65816
     def inst_0xa3(self):
@@ -2012,9 +2025,10 @@ class MPU:
             self.y = self.a & self.byteMask
         else:
             # A and Y both 8 bit, or both 16 bit
+            # *** this also works in emulation mode during an interrupt (p bit 4 is cleared) ***
             self.y = self.a
 
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.FlagsNZ(self.y)
         else:
             self.FlagsNZWord(self.y)
@@ -2026,7 +2040,7 @@ class MPU:
 
     @instruction(name="TAX", mode="imp", cycles=2)
     def inst_0xaa(self):
-        if self.p & self.MS and self.isCLR(self.IRS):
+        if self.p & self.MS and (self.isCLR(self.IRS) and self.mode == 0):
             # A is 8 bit and X is 16 bit, hidden B is transfered as well
             self.x = (self.b << self.BYTE_WIDTH) + self.a
         elif self.isCLR(self.MS) and self.isSET(self.IRS):
@@ -2034,9 +2048,10 @@ class MPU:
             self.x = self.a & self.byteMask
         else:
             # A and X both 8 bit, or both 16 bit
+            # *** this also works in emulation mode during an interrupt (p bit 4 is cleared) ***
             self.x = self.a
 
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.FlagsNZ(self.x)
         else:
             self.FlagsNZWord(self.x)
@@ -2115,7 +2130,7 @@ class MPU:
 
     @instruction(name="TSX", mode="imp", cycles=2)
     def inst_0xba(self):
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.x = self.sp & self.byteMask
             self.FlagsNZ(self.x)
         else:
@@ -2125,7 +2140,7 @@ class MPU:
     @instruction(name="TYX", mode="imp", cycles=2) # new to 65816
     def inst_0xbb(self):
         self.x = self.y
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.FlagsNZ(self.x)
         else:
             self.FlagsNZWord(self.x)
@@ -2153,7 +2168,7 @@ class MPU:
     @instruction(name="CPY", mode="imm", cycles=2)
     def inst_0xc0(self):
         self.opCMP(self.ImmediateAddr, self.y, self.IRS)
-        self.incPC(2 - ((self.p & self.IRS)>>4))
+        self.incPC(2 - (((self.p & self.IRS)>>4) or self.mode))
 
     @instruction(name="CMP", mode="dix", cycles=6)
     def inst_0xc1(self):
@@ -2216,7 +2231,7 @@ class MPU:
     @instruction(name="INY", mode="imp", cycles=2)
     def inst_0xc8(self):
         self.y += 1
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.y &= self.byteMask
             self.FlagsNZ(self.y)
         else:
@@ -2231,7 +2246,7 @@ class MPU:
     @instruction(name="DEX", mode="imp", cycles=2)
     def inst_0xca(self):
         self.x -= 1
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.x &= self.byteMask
             self.FlagsNZ(self.x)
         else:
@@ -2313,7 +2328,7 @@ class MPU:
 
     @instruction(name="PHX", mode="stk", cycles=3)
     def inst_0xda(self):
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.stPush(self.x)
         else:
             self.stPushWord(self.x)
@@ -2350,7 +2365,7 @@ class MPU:
     @instruction(name="CPX", mode="imm", cycles=2)
     def inst_0xe0(self):
         self.opCMP(self.ImmediateAddr, self.x, self.IRS)
-        self.incPC(2 - ((self.p & self.IRS)>>4))
+        self.incPC(2 - (((self.p & self.IRS)>>4) or self.mode))
 
     @instruction(name="SBC", mode="dix", cycles=6)
     def inst_0xe1(self):
@@ -2404,7 +2419,7 @@ class MPU:
     @instruction(name="INX", mode="imp", cycles=2)
     def inst_0xe8(self):
         self.x += 1
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.x &= self.byteMask
             self.FlagsNZ(self.x)
         else:
@@ -2507,7 +2522,7 @@ class MPU:
 
     @instruction(name="PLX", mode="stk", cycles=4)
     def inst_0xfa(self):
-        if self.p & self.IRS:
+        if (self.p & self.IRS) or self.mode:
             self.x = self.stPop()
             self.FlagsNZ(self.x)
         else:

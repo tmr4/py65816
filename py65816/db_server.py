@@ -1,18 +1,21 @@
+import os
+import select
 import socket
+import subprocess
 import time
 import threading
-import subprocess
-import select
 
 from py65.utils.conversions import itoa
 
 class db_server():
 
-#    def __init__(self, mon, mpu, interrupts):
-    def __init__(self, mon, mpu, dbWin=False):
+    def __init__(self, mon, mpu, interrupts, dbWin=False):
+#    def __init__(self, mon, mpu):
         self.mon = mon
         self.mpu = mpu
-#        self.interrupts = interrupts
+
+        # *** TODO: consider if the debug window needs to be aware of interrupts ***
+        self.interrupts = interrupts
 
         self.SThread = False
         self.dbOpt = 0
@@ -37,7 +40,9 @@ class db_server():
 #        return self.interrupts.via.quit
 
     def client(self):
-        self.p = subprocess.Popen("python db_client.py", 
+        dir = os.path.dirname(__file__)
+        client_path = os.path.join(dir, 'db_client.py')
+        self.p = subprocess.Popen('python ' + client_path, 
             #stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             creationflags=subprocess.CREATE_NEW_CONSOLE)
 
