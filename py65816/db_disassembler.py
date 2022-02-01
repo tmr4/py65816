@@ -40,9 +40,14 @@ class dbDisassembler(Disassembler):
             length = 3
 
         elif addressing == 'imm':
-            byte = self._mpu.ByteAt(pc + 1)
-            disasm += ' #$' + self.byteFmt % byte
-            length = 2
+            if self._mpu.p & self._mpu.MS:
+                byte = self._mpu.ByteAt(pc + 1)
+                disasm += ' #$' + self.byteFmt % byte
+                length = 2
+            else:
+                word = self._mpu.WordAt(pc + 1)
+                disasm += ' #$' + self.addrFmt % word
+                length = 3
 
         elif addressing == 'imp':
             length = 1
@@ -143,14 +148,14 @@ class dbDisassembler(Disassembler):
             length = 3
 
         elif addressing == 'abl':
-            address = self._mpu.WordAt(pc + 1)
+            address = self._mpu.LongAt(pc + 1)
             address_or_label = self._address_parser.label_for(
                 address, '$' + self.addrFmt % address)
             disasm += ' %s' % address_or_label
             length = 4
 
         elif addressing == 'alx':
-            address = self._mpu.WordAt(pc + 1)
+            address = self._mpu.LongAt(pc + 1)
             address_or_label = self._address_parser.label_for(
                 address, '$' + self.addrFmt % address)
             disasm += ' %s,X' % address_or_label
@@ -251,7 +256,7 @@ class dbDisassembler(Disassembler):
             disasm += ' ' + address_or_label
             length = 3
 
-        elif addressing == 'ska':
+        elif addressing == 'ska' or addressing == 'spc':
             data = self._mpu.WordAt(pc + 1)
             address_or_label = self._address_parser.label_for(
                 data, '$' + self.addrFmt % data)
@@ -260,7 +265,9 @@ class dbDisassembler(Disassembler):
 
         elif addressing == 'ski':
             byte = self._mpu.ByteAt(pc + 1)
-            disasm += ' #$' + self.byteFmt % byte
+            # *** TODO: choose between these according to ca65 syntax ***
+#            disasm += ' #$' + self.byteFmt % byte
+            disasm += ' $' + self.byteFmt % byte
             length = 2
 
         elif addressing == 'stk':

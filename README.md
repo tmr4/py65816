@@ -43,18 +43,18 @@ Options:
 -a, --acia "<address> <filename>" : Add an ACIA at address with filename for block access
 ````
 
-The py65816 monitor inherits from the py65 monitor so most monitor functions should be the same.  Mike Naberezny has provided online [documentation](https://py65.readthedocs.io/en/latest/).  The debug window provides a a slightly enhanced subset of these commands (type `help` or `h` in the debug window).
+The py65816 monitor inherits from the py65 monitor so most monitor functions should be the same though I haven't tested many of them.  Mike Naberezny has provided online [documentation](https://py65.readthedocs.io/en/latest/).  The debug window provides a slightly enhanced subset of these commands (type `help` or `h` in the debug window).
 
 # Status
-1. About 98% of the code for the new 65C816 device is covered by unit tests and the device has passed them all.  Some known issues/limitations:
+1. About 98% of the code for the new 65C816 device is covered by unit tests and the device has passed them all.  Some known issues/limitations for the 65816 simulation:
     * I use nose2 to evaluate test coverage.  View current unit test coverage with `nose2 --with-coverage` or `nose2 --with-coverage --coverage-report html` for a detailed html report.
     * Extra cycle counts haven't been considered for any new to 65816 opcodes.
     * ADC and SBC in decimal mode are likely invalid in 16 bit.
     * Page and bank wrapping needs tested.  Don't count on these being the same as hardware right now.
     * Some instructions operating in mixed register modes haven't been fully tested.  For example, TAY, TAX, TXA, TYA when one register is 8-bit and the other is 16-bit.
-    * FIXED: PEA and companion instructions haven't been tested.  At this point, assume they don't work properly.
     * Move block instructions haven't been tested in 8-bit mode.
     * New 65816 instructions have generally not been tested in emulation mode.
+    * FIXED: PEA and companion instructions haven't been tested.  At this point, assume they don't work properly.
 2. Interrupt handling is very limited, mainly just enough for my own requirements.  But it isn't hard to add other capabilities.  The main consideration is the source of the interrupt trigger.  For example, in my build I use the 65C22 shift register to capture a byte sent from a keyboard controller.  When the shift register receives a complete byte it requests an interrupt from the 6502.  I've modeled the shift register here in a similar way.  It will trigger an interrupt when a keystroke is available.
 3. See [Debug Window](https://github.com/tmr4/py65_debug_window) for some of its limitations.
 

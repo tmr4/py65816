@@ -10,19 +10,19 @@ Options:
 -g, --goto <address>              : Perform a goto command after loading any files
 -i, --input <address>             : define location of getc (default $f004)
 -o, --output <address>            : define location of putc (default $f001)
--d, --debug                       : Open debug window
+-w, --debug                       : Open debug window
 -v, --via <address>               : Add a VIA at address
 -a, --acia "<address> <filename>" : Add an ACIA at address with filename for block access
 """
 
 import cmd
 import getopt
+import re
 import shlex
 import sys
 import time
 
 from py65.monitor import Monitor
-from py65.assembler import Assembler
 from py65.utils.addressing import AddressParser
 from py65.utils import console
 from py65.utils.conversions import itoa
@@ -32,6 +32,7 @@ from py65816.devices.mpu65c816 import MPU as CMOS65C816
 from py65816.devices.db_mpu65c02 import MPU as DB65C816
 from py65816.db_server import db_server as server
 from py65816.db_disassembler import dbDisassembler as Disassembler
+from py65816.db_assembler import dbAssembler as Assembler
 from py65816.interrupts import Interrupts
 
 class dbMonitor(Monitor):
@@ -60,7 +61,7 @@ class dbMonitor(Monitor):
         self._width = 72
         self.prompt = "."
         self._add_shortcuts()
-        self._shortcuts['d'] = 'debug'
+        self._shortcuts['w'] = 'debug'
 
         self.dbWin = None
         self.dbInt = None
@@ -73,6 +74,11 @@ class dbMonitor(Monitor):
 
             if argv is None:
                 argv = sys.argv
+                # *** allow tests with nose2 --with-coverage --coverage-report html ***
+                if '--with-coverage' in argv:
+                    argv.remove("--with-coverage")
+                if '--coverage-report' in argv:
+                    argv.remove("--coverage-report")
             load, rom, goto, win, via, acia = self._parse_args(argv)
 
             self._reset(self.mpu_type, self.getc_addr, self.putc_addr)
@@ -105,7 +111,7 @@ class dbMonitor(Monitor):
 
     def _parse_args(self, argv):
         try:
-            shortopts = 'hdv:a:i:o:m:l:r:g:'
+            shortopts = 'hwv:a:i:o:m:l:r:g:'
             longopts = ['help', 'debug', 'via=', 'acia=', 'mpu=', 'input=', 'output=', 'load=', 'rom=', 'goto=']
             options, args = getopt.getopt(argv[1:], shortopts, longopts)
         except getopt.GetoptError as exc:
@@ -144,7 +150,7 @@ class dbMonitor(Monitor):
             if opt in ('-g', '--goto'):
                 goto = value
 
-            if opt in ('-d', '--debug'):
+            if opt in ('-w', '--debug'):
                 win = True
 
             if opt in ('-v', '--via'):
@@ -219,7 +225,7 @@ class dbMonitor(Monitor):
         self.byteMask = self._mpu.byteMask
         if getc_addr and putc_addr:
             self._install_mpu_observers(getc_addr, putc_addr)
-        self._address_parser = AddressParser()
+        self._address_parser = AddressParser(maxwidth=24)
         self._disassembler = Disassembler(self._mpu, self._address_parser)
         self._assembler = Assembler(self._mpu, self._address_parser)
 
@@ -283,6 +289,44 @@ class dbMonitor(Monitor):
             return "$" + pbrfmt % self._mpu.pbr + ":" + self.addrFmt % address + "  " + fieldfmt % dump + disasm
         else:
             return "$" + self.addrFmt % address + "  " + fieldfmt % dump + disasm
+
+    # *** TODO: allow for 65816 registers ***
+    def do_registers(self, args):
+        if args == '':
+            return
+
+        pairs = re.findall('([^=,\s]*)=([^=,\s]*)', args)
+        if pairs == []:
+            return self._output("Syntax error: %s" % args)
+
+        for register, value in pairs:
+            if register not in ('pc', 'sp', 'a', 'x', 'y', 'p'):
+                self._output("Invalid register: %s" % register)
+            else:
+                try:
+                    intval = self._address_parser.number(value)
+                except KeyError as exc: # label not found
+                    self._output(exc.args[0])
+                    continue
+                except OverflowError as exc: # wider than address space
+                    msg = "Overflow: %r too wide for register %r"
+                    self._output(msg % (value, register))
+                    continue
+
+                # check size against mode/bit selection
+                if register == 'p' or ((self._mpu.p & self._mpu.MS) and (register == 'a')) or ((self._mpu.p & self._mpu.IRS) and ((register == 'x') or (register == 'y'))):
+                    if intval != (intval & self.byteMask):
+                        msg = "Overflow: %r too wide for register %r"
+                        self._output(msg % (value, register))
+                        continue
+#                if register == 'pc' or register == 'sp':
+                else:
+                    if intval != (intval & self.addrMask):
+                        msg = "Overflow: %r too wide for register %r"
+                        self._output(msg % (value, register))
+                        continue
+
+                setattr(self._mpu, register, intval)
 
 def main(args=None):
     c = dbMonitor()

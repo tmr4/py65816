@@ -1,5 +1,7 @@
 # from test_mpu6502.py, 434 tests
 
+from py65816.db_assembler import dbAssembler as assembler
+
 class Common65816NativeTests:
     """Tests common to 65816-based microprocessors Running in Native Mode"""
 
@@ -818,11 +820,11 @@ class Common65816NativeTests:
 
 
 
-    #def test_decorated_addressing_modes_are_valid(self):
-    #    valid_modes = [x[0] for x in assembler.Assembler.Addressing]
-    #    mpu = self._make_mpu()
-    #    for name, mode in mpu.disassemble:
-    #        self.assertTrue(mode in valid_modes)
+    def dont_test_decorated_addressing_modes_are_valid(self):
+        valid_modes = [x[0] for x in assembler.Assembler.Addressing]
+        mpu = self._make_mpu()
+        for name, mode in mpu.disassemble:
+            self.assertTrue(mode in valid_modes)
 
     # Test Helpers
 

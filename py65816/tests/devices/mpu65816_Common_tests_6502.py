@@ -1,4 +1,5 @@
 # from test_mpu6502.py, 434 tests
+from py65816.db_assembler import dbAssembler as assembler
 
 class Common6502Tests:
     """Tests common to 6502-based microprocessors"""
@@ -5526,11 +5527,11 @@ class Common6502Tests:
         self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
         self.assertEqual(0x0001, mpu.pc)
 
-    #def test_decorated_addressing_modes_are_valid(self):
-    #    valid_modes = [x[0] for x in assembler.Assembler.Addressing]
-    #    mpu = self._make_mpu()
-    #    for name, mode in mpu.disassemble:
-    #        self.assertTrue(mode in valid_modes)
+    def dont_test_decorated_addressing_modes_are_valid(self):
+        valid_modes = [x[0] for x in assembler.Assembler.Addressing]
+        mpu = self._make_mpu()
+        for name, mode in mpu.disassemble:
+            self.assertTrue(mode in valid_modes)
 
     # Test Helpers
 
