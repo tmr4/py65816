@@ -93,7 +93,7 @@ class MPU:
             if (self.IRQ_pin == 0) and (self.p & self.INTERRUPT == 0):
                 self.irq()
                 self.IRQ_pin = 1
-            instructCode = self.memory[self.pc]
+            instructCode = self.memory[(self.pbr << self.ADDR_WIDTH) + self.pc]
             self.incPC()
             self.excycles = 0
             self.addcycles = self.extracycles[instructCode]
@@ -157,6 +157,8 @@ class MPU:
         self.pc = self.WordAt(self.NMI[self.mode])
         self.processorCycles += 7
 
+    #*****************************************************************************
+    #*****************************************************************************
     # Helpers for addressing modes and instructions
 
     def ByteAt(self, addr):
@@ -172,17 +174,13 @@ class MPU:
     def TCAt(self, addr):
         return (self.WordAt(addr + 2) << self.ADDR_WIDTH) + self.WordAt(addr)
 
-    def WrapAt(self, addr):
-        wrap = lambda x: (x & self.addrHighMask) + ((x + 1) & self.byteMask)
-        return self.ByteAt(addr) + (self.ByteAt(wrap(addr)) << self.BYTE_WIDTH)
-
     def OperandAddr(self):
         return (self.pbr << self.ADDR_WIDTH) + self.pc
 
     def OperandByte(self):
         return self.ByteAt(self.OperandAddr())
 
-    # *** TODO: likely these next two need some form of WrapAt
+    # *** TODO: likely these next two need some form of bank boundary WrapAt ***
     def OperandWord(self):
         return self.WordAt(self.OperandAddr())
 
@@ -265,72 +263,38 @@ class MPU:
         else:
             self.p |= (value >> self.BYTE_WIDTH) & self.NEGATIVE
 
-    # Addressing modes
+    #*****************************************************************************
+    #*****************************************************************************
+    #   Page and Bank Boundary Wrapping
+    #
+    #   Page Boundary Wrapping
+    #   From: http://6502.org/tutorials/65c816opcodes.html#5.1
+    #   Page boundary wrapping only occurs in emulation mode, and only for 65C02 instructions and addressing
+    #   modes.  When in emulation mode, page boundary wrapping only occurs in the following situations:
+    #       A. The direct page wraps at page boundary only when dpr low byte is 0
+    #       B. The stack wraps at the page 1 boundary
+    #
+    #   Bank Boundary Wrapping
+    #   From: http://6502.org/tutorials/65c816opcodes.html#5.2
+    #   Bank boundary wrapping occurs in both native and emulation mode.
+    #   The following are confined to bank 0 and thus wrap at the bank 0 boundary:
+    #       A. The direct page
+    #       B. The stack
+    #       C. Absolute Indirect and Absolute Indirect Long addressing modes (only apply to JMP)
+    #
+    #   The following are confined to bank K and thus wrap at the bank K boundary:
+    #       A. Absolute Indirect Indexed X addressing mode (only applies to JMP and JSR)
+    #       B. The Program Counter 
+    #
+    #   For the MVN and MVP instructions, the source and destination banks wraps at their bank boundaries.
+    #
+    #   Otherwise, wrapping does not occur at bank boundaries.
 
-    # address modes have to return an effective address, which is something like:
-    #   (self.dbr << self.ADDR_WIDTH) + self.pc
-    # as they are invariably used to directly access memory or in functions that do
-    # such as ByteAt and WordAt which take a simple offset into memory
-    # Modes that use pbr (e.g. JMP, JSR, etc.) are handled separately in the instructions themselves
-    # *** TODO: do we need to restrict effective address to memory model limit? ***
-
-    # New 65816 Specific Addressing Modes:
-    # -------------------------------------
-    #    New Mode Name                             Example
-    #    -------------------------------------------------------
-    #    Absolute Long                             LDA $123456
-    #    Absolute Long Indexed X                   LDA $123456,X
-    #    Absolute Indexed Indirect                 JMP ($1234,X)
-    #    Absolute Indirect Long                    JMP [$1234]
-    #    Block Move                                MVP 0,0
-    #    Direct Page Indirect                      LDA ($12)
-    #    Direct Page Indirect Long                 LDA [$12]
-    #    Direct Page Indirect Long Indexed Y       LDA [$77],Y
-    #    Program Counter Relative Long             BRL $1234
-    #    Stack Relative                            LDA 15,S
-    #    Stack Relative Indirect Indexed Y         LDA (9,S),Y
-
-    def AbsoluteAddr(self): # "abs" (26 opcodes)
-        return (self.dbr << self.ADDR_WIDTH) + self.OperandWord()
-
-    def AbsoluteXAddr(self): # "abx" (17 opcodes)
-        tmp = self.OperandWord()
-        a1 = (self.dbr << self.ADDR_WIDTH) + tmp
-        a2 = a1 + self.x
-        if self.addcycles:
-            if (a1 & self.addrBankMask) != (a2 & self.addrBankMask):
-                self.excycles += 1
-        return a2
-
-    def AbsoluteYAddr(self): # "aby" (9 opcodes)
-        addr = self.OperandWord()
-        a1 = (self.dbr << self.ADDR_WIDTH) + addr
-        a2 = a1 + self.y
-        if self.addcycles:
-            if (a1 & self.addrBankMask) != (a2 & self.addrBankMask):
-                self.excycles += 1
-        return a2
-
-    def AbsoluteIndirectAddr(self): # "abi" (1 opcodes)
-        return (self.OperandWord() + (self.pbr << self.ADDR_WIDTH))
-
-    def AbsoluteIndirectXAddr(self): # "aix" (2 opcodes)
-        return (self.OperandWord() + self.x + (self.pbr << self.ADDR_WIDTH)) # & self.addrMask
-
-    # Absolute Indirect Long "ail" (1 opcode) modeled directly in JMP as it has to change pbr
-
-    def AbsoluteLongAddr(self): # new to 65816, "abl" (10 opcodes)
-        # JML and JSL handle this mode separately as they has to change pbr
-        return self.OperandLong()
-
-    def AbsoluteLongXAddr(self): # new to 65816, "alx" (8 opcodes)
-        # *** TODO: add 1 cycle if mode = 0 (do it either here or in instruction) generally it 
-        # seems that it's done in address mode def ***
-        return self.OperandLong() + self.x
-
-    # Accumulator "acc" (6 opcodes) modeled as a None address argument in appropriate operation call
-
-    # Block Move addressing: "blk" (2 opcodes) modeled inline
+    # *** TODO:
+    # per http://www.6502.org/tutorials/65c816opcodes.html#5.8
+    # I assume that page boundary wrapping takes precedence over bank boundary wrapping in
+    # emulation mode when dpr low byte is 0
+    # ***
 
     # http://www.6502.org/tutorials/65c816opcodes.html#5.7 through 
     # http://www.6502.org/tutorials/65c816opcodes.html#5.9
@@ -353,60 +317,188 @@ class MPU:
     #
     # See 65816 Programming Manual, pg 156, which states that this save 1 cycle
 
+
+    # Original py65 page boundary wrap at
+    # returns word at addr, wrapping at a page boundary
+    def WrapAt(self, addr):
+        # Examples for addresses at page boundary and not, say 0x01ff and 0x0155:
+        #                 0x01ff => 0x0100       +   0x0200 =>  0x00  = 0x0100
+        #                 0x0155 => 0x0100       +   0x0156 =>  0x56  = 0x0156
+        wrap = lambda x: (x & self.addrHighMask) + ((x + 1) & self.byteMask)
+        #     get bytes at 0x01ff   and         0x0100     
+        #     get bytes at 0x0155   and         0x0156     
+        return self.ByteAt(addr) + (self.ByteAt(wrap(addr)) << self.BYTE_WIDTH)
+
+    # new 65816 address modes and instructions don't page boundary wrap
+    def dpWrap(self, offset, pageWrap=True):
+        # direct page wraps at:
+        if pageWrap and self.mode and (self.dpr & self.byteMask == 0):
+            # page boundary in emulation mode when dpr low byte = 0
+            return self.dpr + (offset & self.byteMask)
+        else:
+            # bank 0 boundary
+            return (self.dpr + offset) & self.addrMask
+
+    # returns bank 0 word at dpaddr, wrapping at page or bank 0 boundary as appropriate
+    def dpWrapAt(self, dpaddr):
+        # direct page indirect address wraps at:
+        if self.mode and (self.dpr & self.byteMask == 0):
+            # page boundary in emulation mode when dpr low byte = 0
+            return self.WrapAt(dpaddr)
+        elif dpaddr == 0xffff:
+            # bank 0 boundary
+            return (self.ByteAt(0x0000) << self.BYTE_WIDTH) + self.ByteAt(dpaddr)
+        else:
+            return self.WordAt(dpaddr)
+
+
+
+    #*****************************************************************************
+    #*****************************************************************************
+
+    # Addressing modes
+
+    # address modes have to return an effective address, which is something like:
+    #   (self.dbr << self.ADDR_WIDTH) + self.pc
+    # as they are invariably used to directly access memory or in functions that do
+    # such as ByteAt and WordAt which take a simple offset into memory
+    # Modes that use pbr (e.g. JMP, JSR, etc.) are handled separately in the instructions themselves
+    # *** TODO: do we need to restrict effective address to memory model limit? ***
+
+    # New 65816 Specific Addressing Modes:
+    # From: https://softpixel.com/~cwright/sianse/docs/65816NFO.HTM#6.10
+    # -------------------------------------
+    #    New Mode Name                             Example
+    #    -------------------------------------------------------
+    #    Absolute Long                             LDA $123456
+    #    Absolute Long Indexed X                   LDA $123456,X
+    #    Absolute Indexed Indirect                 JMP ($1234,X)
+    #    Absolute Indirect Long                    JMP [$1234]
+    #    Block Move                                MVP 0,0
+    #    Direct Page Indirect                      LDA ($12)
+    #    Direct Page Indirect Long                 LDA [$12]
+    #    Direct Page Indirect Long Indexed Y       LDA [$77],Y
+    #    Program Counter Relative Long             BRL $1234
+    #    Stack Relative                            LDA 15,S
+    #    Stack Relative Indirect Indexed Y         LDA (9,S),Y
+
+    # new 65816 address modes don't page wrap
+    # I assume that Direct Page Indirect is new in name only, it's the 6502's zero page 
+    # Perhaps this is a reference to the limitations of page wrapping (if so, why not the others)
+    # *** TODO: verify this ***
+
+    def AbsoluteAddr(self): # "abs" (26 opcodes)
+        return (self.dbr << self.ADDR_WIDTH) + self.OperandWord()
+
+    def AbsoluteXAddr(self): # "abx" (17 opcodes)
+        tmp = self.OperandWord()
+        a1 = (self.dbr << self.ADDR_WIDTH) + tmp
+        a2 = a1 + self.x
+        if self.addcycles:
+            if (a1 & self.addrBankMask) != (a2 & self.addrBankMask):
+                self.excycles += 1
+        return a2
+
+    def AbsoluteYAddr(self): # "aby" (9 opcodes)
+        addr = self.OperandWord()
+        a1 = (self.dbr << self.ADDR_WIDTH) + addr
+        a2 = a1 + self.y
+        if self.addcycles:
+            if (a1 & self.addrBankMask) != (a2 & self.addrBankMask):
+                self.excycles += 1
+        return a2
+
+    # Absolute Indirect "abi" (1 opcode) modeled directly in JMP
+    # 65C02 and 65816 don't have the 6502 page wrap bug
+    # but operand indirection wraps at bank 0 boundary
+
+    def AbsoluteIndirectXAddr(self): # "aix" (2 opcodes)
+        pb_addr = (self.pbr << self.ADDR_WIDTH) + self.OperandWord() + self.x
+
+        # program bank addr indirection wraps at bank boundary
+        if pb_addr & self.addrMask == 0xffff:
+            return  (self.ByteAt(self.pbr << self.ADDR_WIDTH) << self.BYTE_WIDTH) + self.ByteAt(pb_addr)
+        else:
+            return self.WordAt(pb_addr)
+        
+    # Absolute Indirect Long "ail" (1 opcode) modeled directly in JMP
+    # new 65816 address modes don't wrap
+    # but operand indirection wraps at bank 0 boundary
+
+    # new 65816 address modes don't wrap
+    def AbsoluteLongAddr(self): # new to 65816, "abl" (10 opcodes)
+        # JML and JSL handle this mode separately as they has to change pbr
+        return self.OperandLong()
+
+    # new 65816 address modes don't wrap
+    def AbsoluteLongXAddr(self): # new to 65816, "alx" (8 opcodes)
+        # *** TODO: add 1 cycle if mode = 0 (do it either here or in instruction) generally it 
+        # seems that it's done in address mode def ***
+        return self.OperandLong() + self.x
+
+    # Accumulator "acc" (6 opcodes) modeled as a None address argument in appropriate operation call
+
+    # new 65816 address modes don't wrap
+    # Block Move addressing: "blk" (2 opcodes) modeled inline
+
     def DirectPageAddr(self): # "dpg" (24 opcodes)
-        return (self.dpr + self.OperandByte()) & self.addrMask
+        return self.dpWrap(self.OperandByte())
 
     def DirectPageXAddr(self): # "dpx" (18 opcodes)
-        return (self.dpr + self.OperandByte() + self.x) & self.addrMask
+        return self.dpWrap(self.OperandByte() + self.x)
 
     def DirectPageYAddr(self): # "dpy" (2 opcodes)
-        return (self.dpr + self.OperandByte() + self.y) & self.addrMask
+        return self.dpWrap(self.OperandByte() + self.y)
 
     def DirectPageIndirectXAddr(self): # "dix" (8 opcodes)
-        # *** TODO: verify WrapAt works correctly at $ffff ***
-#        dpaddr = self.WrapAt((self.dpr + self.x + self.OperandByte()) & self.addrMask)
-        dpaddr = (self.dpr + self.x + self.OperandByte()) & self.addrMask
-        inaddr = self.WrapAt(dpaddr)
+        dpaddr = self.dpWrap(self.OperandByte() + self.x)
+        inaddr = self.dpWrapAt(dpaddr)
         return (self.dbr << self.ADDR_WIDTH) + inaddr
 
     def DirectPageIndirectAddr(self): # "dpi" (8 opcodes)
-        # *** TODO: verify WrapAt works correctly at $ffff ***
-        dpaddr = (self.dpr + self.OperandByte()) & self.addrMask
-        inaddr = self.WrapAt(dpaddr)
+        dpaddr = self.dpWrap(self.OperandByte())
+        inaddr = self.dpWrapAt(dpaddr)
         return (self.dbr << self.ADDR_WIDTH) + inaddr
 
+    # new 65816 address modes don't page boundary wrap
     def DirectPageIndirectLongAddr(self): # new to 65816, "dil" (8 opcodes)
-        # *** TODO: check on if need wrap at $ffff (seems likely) ***
-        dpaddr = (self.dpr + self.OperandByte()) & self.addrMask
-        addr = (self.ByteAt(dpaddr + 2) << self.ADDR_WIDTH) + self.WordAt(dpaddr)
-        return addr
+        dpaddr = self.dpWrap(self.OperandByte(), False)
+
+        # indirect adddress wraps at bank 0 boundary
+        if dpaddr == 0xffff:
+            bank = self.ByteAt(0x0001)
+            inaddr = (self.ByteAt(0x0000) << self.BYTE_WIDTH) + self.ByteAt(dpaddr)
+        elif dpaddr == 0xfffe:
+            bank = self.ByteAt(0x0000)
+            inaddr = self.WordAt(dpaddr)
+        else:
+            bank = self.ByteAt(dpaddr + 2)
+            inaddr = self.WordAt(dpaddr)
+
+        return (bank << self.ADDR_WIDTH) + inaddr
+
 
     def DirectPageIndirectYAddr(self): # "diy" (8 opcodes)
-        # *** TODO: verify WrapAt works correctly at $ffff ***
-#        dpaddr = self.WrapAt((self.dpr + self.OperandByte()) & self.addrMask)
-#        a1 = (self.dbr << self.ADDR_WIDTH) + dpaddr
-#        a2 = a1 + self.y
-        dpaddr = (self.dpr + self.OperandByte()) & self.addrMask
-        #inaddr = self.WrapAt(dpaddr)
-        inaddr = self.WordAt(dpaddr)
+        # *** TODO: check on excycles ***
+        dpaddr = self.dpWrap(self.OperandByte())
+        inaddr = self.dpWrapAt(dpaddr)
         efaddr = (self.dbr << self.ADDR_WIDTH) + inaddr + self.y
         if self.addcycles:
             if (inaddr & self.addrBankMask) != (efaddr & self.addrBankMask):
                 self.excycles += 1
         return efaddr
 
+    # new 65816 address modes don't page boundary wrap
     def DirectPageIndirectLongYAddr(self): # new to 65816, "dly" (8 opcodes)
-        # *** TODO: verify WrapAt works correctly at $ffff ***
-#        dpaddr = self.WrapAt((self.dpr + self.OperandByte()) & self.addrMask)
-#        dpaddr = self.WordAt((self.dpr + self.OperandByte()) & self.addrMask)
-#        a1 = (self.ByteAt(dpaddr + 2) << self.ADDR_WIDTH) + dpaddr
-#        a2 = a1 + self.y
-        dpaddr = (self.dpr + self.OperandByte()) & self.addrMask
-        inaddr = (self.ByteAt(dpaddr + 2) << self.ADDR_WIDTH) + self.WordAt(dpaddr)
+        # *** TODO: check on excycles ***
+        inaddr = self.DirectPageIndirectLongAddr()
+
         efaddr = inaddr + self.y
+
         if self.addcycles:
             if (inaddr & self.addrBankMask) != (efaddr & self.addrBankMask):
                 self.excycles += 1
+                
         return efaddr
 
     def ImmediateAddr(self): # "imm" (14 opcodes)
@@ -430,6 +522,7 @@ class MPU:
 
         self.pc = (self.pbr << self.ADDR_WIDTH) + addr & self.addrMask
 
+    # new 65816 address modes don't wrap
     def ProgramCounterRelLongAddr(self): # "prl" (1 opcode)
         #self.excycles += 1
         offset = self.OperandWord()
@@ -446,6 +539,8 @@ class MPU:
 
         self.pc = (self.pbr << self.ADDR_WIDTH) + addr & self.addrMask
 
+    # These is the WDC Programming Manual breakdown for stack addressing
+    # *** TODO: these need cleaned up. Don't need so many distictions. ***
     # Stack Absolute Addressing "ska" (1 opcode) modeled directly
     # Stack Direct Page Indirect Addressing "ski" (1 opcode) modeled directly
     # Stack Interrupt Addressing "stk" (2 opcodes) modeled directly
@@ -454,19 +549,20 @@ class MPU:
     # Stack Push Addressing "stk" (7 opcodes) modeled directly 65816 Programming manual only lists 6
     # Stack RTI, RTL, RTS Addressing "stk" (3 opcodes) modeled directly
 
+    # new 65816 address modes don't wrap
     def StackRelAddr(self): # "str" (8 opcode) 65816 Programming manual only lists 4
         return (self.sp + self.OperandByte()) & self.addrMask
 
+    # new 65816 address modes don't wrap
     def StackRelIndirectYAddr(self): # "siy" (8 opcode)
-        # *** TODO: does this need WrapAt? ***
-#        return (self.dbr << self.ADDR_WIDTH) + self.WordAt((self.sp + self.OperandByte()) & self.addrMask) + self.y
         spaddr = (self.sp + self.OperandByte()) & self.addrMask
-        #inaddr = self.WrapAt(spaddr)
         inaddr = self.WordAt(spaddr)
         # *** TODO: any extra cycles? ***
         return (self.dbr << self.ADDR_WIDTH) + inaddr + self.y
 
-    # operations
+    #*****************************************************************************
+    #*****************************************************************************
+    # Operations
 
     def opADC(self, x):
         if self.p & self.MS:
@@ -1002,7 +1098,9 @@ class MPU:
             self.memory[addr] = r & self.byteMask
             self.memory[addr+1] = (r >> self.BYTE_WIDTH) & self.byteMask
 
-    # instructions
+    #*****************************************************************************
+    #*****************************************************************************
+    # Instructions
 
     # the 65816 implements all opcodes
     instruct = [0] * 256
@@ -1670,8 +1768,14 @@ class MPU:
 
     @instruction(name="JMP", mode="abi", cycles=5)
     def inst_0x6c(self):
-        # 65C02 and 65816 don't wrap
-        self.pc = self.WordAt(self.AbsoluteIndirectAddr())
+        # 65C02 and 65816 don't have the 6502 page wrap bug
+        operand = self.OperandWord()
+
+        # operand indirection wraps at bank 0 boundary
+        if operand == 0xffff:
+            self.pc = (self.ByteAt(0x0000) << self.BYTE_WIDTH) + self.ByteAt(operand)
+        else:
+            self.pc = self.WordAt(operand)
 
     @instruction(name="ADC", mode="abs", cycles=4)
     def inst_0x6d(self):
@@ -1759,7 +1863,7 @@ class MPU:
 
     @instruction(name="JMP", mode="aix", cycles=6)
     def inst_0x7c(self):
-        self.pc = self.WordAt(self.AbsoluteIndirectXAddr())
+        self.pc = self.AbsoluteIndirectXAddr()
 
     @instruction(name="ADC", mode="abx", cycles=4, extracycles=1)
     def inst_0x7d(self):
@@ -2342,9 +2446,19 @@ class MPU:
 
     @instruction(name="JML", mode="ail", cycles=6)  # new to 65816
     def inst_0xdc(self):
-        addr = self.OperandWord()
-        pbr = self.ByteAt(addr + 2)
-        self.pc = self.WordAt(addr)
+        operand = self.OperandWord()
+
+        # operand indirection wraps at bank 0 boundary
+        if operand == 0xffff:
+            pbr = self.ByteAt(0x0001)
+            self.pc = (self.ByteAt(0x0000) << self.BYTE_WIDTH) + self.ByteAt(operand)
+        elif operand == 0xfffe:
+            pbr = self.ByteAt(0x0000)
+            self.pc = self.WordAt(operand)
+        else:
+            pbr = self.ByteAt(operand + 2)
+            self.pc = self.WordAt(operand)
+
         self.pbr = pbr
 
     @instruction(name="CMP", mode="abx", cycles=4, extracycles=1)
@@ -2556,7 +2670,7 @@ class MPU:
     @instruction(name="JSR", mode="aix", cycles=8) # new to 65816
     def inst_0xfc(self):
         self.stPushWord((self.pc + 1) & self.addrMask)
-        self.pc = self.WordAt(self.AbsoluteIndirectXAddr())
+        self.pc = self.AbsoluteIndirectXAddr()
 
     @instruction(name="SBC", mode="abx", cycles=4, extracycles=1)
     def inst_0xfd(self):

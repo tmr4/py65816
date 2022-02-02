@@ -1,4 +1,4 @@
-import unittest
+import unittest # python -m unittest discover -p "*816_native_16.py"
 import sys
 from py65816.devices.mpu65c816 import MPU
 #from py65816.tests.devices.mpu65816_Common_tests_6502 import Common6502Tests
@@ -15,6 +15,210 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertTrue('65C816' in repr(mpu))
 
     # Native Mode - 16 bit
+
+    # Page Bounday Wrap Tests
+    def test_dpx_no_wraps_page_boundary_when_dl_zero(self):
+        mpu = self._make_mpu()
+        mpu.dpr = 0x0100
+        mpu.x = 1
+        self._write(mpu.memory, 0x00ff, (0x34, 0x12))
+        self._write(mpu.memory, 0x01ff, (0xcd, 0xab, 0xff))
+        # $0000 LDA $ff,X
+        self._write(mpu.memory, 0x0000, (0xb5, 0xff))
+        mpu.step()
+        self.assertEqual(0x0002, mpu.pc)
+        self.assertEqual(0xffab, mpu.a)
+
+    def test_dpx_no_wrap_page_boundary_when_dl_not_zero(self):
+        mpu = self._make_mpu()
+        mpu.dpr = 0x0101
+        mpu.x = 0
+        self._write(mpu.memory, 0x00ff, (0x34, 0x12))
+        self._write(mpu.memory, 0x01ff, (0xcd, 0xab, 0xff))
+        # $0000 LDA $ff,X
+        self._write(mpu.memory, 0x0000, (0xb5, 0xff))
+        mpu.step()
+        self.assertEqual(0x0002, mpu.pc)
+        self.assertEqual(0xffab, mpu.a)
+
+    def test_dpi_no_wrap_page_boundary_when_dl_zero(self):
+        mpu = self._make_mpu()
+        mpu.dpr = 0x0100
+        self._write(mpu.memory, 0x0100, (0xcd, 0xab))
+        self._write(mpu.memory, 0x01ff, (0x34, 0x12))
+        self._write(mpu.memory, 0x1234, (0x78, 0x56))
+        self._write(mpu.memory, 0xabcd, (0xbc, 0x9a))
+        self._write(mpu.memory, 0xcd34, (0x10, 0x20))
+        # $0000 LDA ($ff)
+        self._write(mpu.memory, 0x0000, (0xb2, 0xff))
+        mpu.step()
+        self.assertEqual(0x0002, mpu.pc)
+        self.assertEqual(0x5678, mpu.a)
+
+    def test_dix_no_wraps_page_boundary_when_dl_zero(self):
+        mpu = self._make_mpu()
+        mpu.dpr = 0x0100
+        mpu.x = 1
+        self._write(mpu.memory, 0x0100, (0xcd, 0xab))
+        self._write(mpu.memory, 0x01ff, (0x34, 0x12))
+        self._write(mpu.memory, 0x1234, (0x78, 0x56))
+        self._write(mpu.memory, 0xabcd, (0xbc, 0x9a))
+        self._write(mpu.memory, 0xcd34, (0x10, 0x20))
+        # $0000 LDA ($ff,X)
+        self._write(mpu.memory, 0x0000, (0xa1, 0xfe))
+        mpu.step()
+        self.assertEqual(0x0002, mpu.pc)
+        self.assertEqual(0x5678, mpu.a)
+
+    def test_no_stack_wrap(self):
+        mpu = self._make_mpu()
+        mpu.sp = 0x01ff
+        self._write(mpu.memory, 0x00ff, (0x34, 0x12))
+        self._write(mpu.memory, 0x01ff, (0xcd, 0xab, 0xff))
+        # $000 PLA
+        mpu.memory[0x0000] = 0x68
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xffab, mpu.a)
+
+    # Bank Bounday Wrap Tests
+
+    def test_dpx_wraps_at_bank_zero_boundary(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0x0100
+        mpu.dpr = 0xff01
+        mpu.x = 0x00
+        self._write(mpu.memory, 0x0000, (0x34, 0x12))
+        self._write(mpu.memory, 0x10000, (0xcd, 0xab))
+        # $0000 LDA $ff,X
+        self._write(mpu.memory, 0x0100, (0xb5, 0xff))
+        mpu.step()
+        self.assertEqual(0x0102, mpu.pc)
+        self.assertEqual(0x1234, mpu.a)
+
+    def test_dpi_dp_wraps_at_bank_zero_boundary(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0x0100
+        mpu.dpr = 0xff01
+        mpu.dbr = 0x01
+        self._write(mpu.memory, 0x0000, (0x34, 0x12))
+        self._write(mpu.memory, 0xffff, (0xcd, 0xab))
+        self._write(mpu.memory, 0x011234, (0x78, 0x56))
+        self._write(mpu.memory, 0x01abcd, (0xbc, 0x9a))
+        self._write(mpu.memory, 0x0134cd, (0x10, 0x20))
+        # $0000 LDA ($ff)
+        self._write(mpu.memory, 0x0100, (0xb2, 0xff))
+        mpu.step()
+        self.assertEqual(0x0102, mpu.pc)
+        self.assertEqual(0x5678, mpu.a)
+
+    def test_dpi_indaddr_wraps_at_bank_zero_boundary(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0x0100
+        mpu.dpr = 0xff01
+        mpu.dbr = 0x01
+        self._write(mpu.memory, 0x0000, (0x34, 0x12))
+        self._write(mpu.memory, 0xffff, (0xcd, 0xab))
+        self._write(mpu.memory, 0x011234, (0x78, 0x56))
+        self._write(mpu.memory, 0x01abcd, (0xbc, 0x9a))
+        self._write(mpu.memory, 0x0134cd, (0x10, 0x20))
+        # $0000 LDA ($ff)
+        self._write(mpu.memory, 0x0100, (0xb2, 0xfe))
+        mpu.step()
+        self.assertEqual(0x0102, mpu.pc)
+        self.assertEqual(0x2010, mpu.a)
+
+    def test_dix_wraps_at_bank_zero_boundary(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0x0100
+        mpu.dpr = 0xff01
+        mpu.dbr = 0x01
+        mpu.x = 0x00
+        self._write(mpu.memory, 0x0000, (0x34, 0x12))
+        self._write(mpu.memory, 0x10000, (0xcd, 0xab))
+        self._write(mpu.memory, 0x011234, (0x78, 0x56))
+        self._write(mpu.memory, 0x01abcd, (0xbc, 0x9a))
+        self._write(mpu.memory, 0x0134cd, (0x10, 0x20))
+        # $0000 LDA ($ff,X)
+        self._write(mpu.memory, 0x0100, (0xa1, 0xff))
+        mpu.step()
+        self.assertEqual(0x0102, mpu.pc)
+        self.assertEqual(0x5678, mpu.a)
+
+    def test_dil_no_wraps_at_page_boundary(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0x0100
+        mpu.dpr = 0xff00
+        mpu.dbr = 0x01
+        self._write(mpu.memory, 0x0000, (0x34, 0x01))
+        self._write(mpu.memory, 0xff00, (0xab, 0x01))
+        self._write(mpu.memory, 0xffff, (0xcd, 0xab, 0x01))
+        self._write(mpu.memory, 0x011234, (0x78, 0x56))
+        self._write(mpu.memory, 0x01abcd, (0xbc, 0x9a))
+        self._write(mpu.memory, 0x0134cd, (0x10, 0x20))
+        # $0000 LDA ($ff)
+        self._write(mpu.memory, 0x0100, (0xa7, 0xff))
+        mpu.step()
+        self.assertEqual(0x0102, mpu.pc)
+        self.assertEqual(0x2010, mpu.a)
+
+    def test_dil_indaddr_wraps_at_bank_zero_boundary_1_byte(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0x0100
+        mpu.dpr = 0xff00
+        mpu.dbr = 0x01
+        self._write(mpu.memory, 0x0000, (0x01, 0x34, 0x01))
+        self._write(mpu.memory, 0xff00, (0x01, 0xab, 0x01))
+        self._write(mpu.memory, 0xfffe, (0xcd, 0xab, 0x01))
+        self._write(mpu.memory, 0x011234, (0x78, 0x56))
+        self._write(mpu.memory, 0x01abcd, (0xbc, 0x9a))
+        self._write(mpu.memory, 0x0134cd, (0x10, 0x20))
+        # $0000 LDA ($fe)
+        self._write(mpu.memory, 0x0100, (0xa7, 0xfe))
+        mpu.step()
+        self.assertEqual(0x0102, mpu.pc)
+        self.assertEqual(0x9abc, mpu.a)
+
+    def test_dil_indaddr_wraps_at_bank_zero_boundary_2_bytes(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0x0100
+        mpu.dpr = 0xff01
+        mpu.dbr = 0x01
+        self._write(mpu.memory, 0x0000, (0x34, 0x01))
+        self._write(mpu.memory, 0xff00, (0xab, 0x01))
+        self._write(mpu.memory, 0xffff, (0xcd, 0xab, 0x01))
+        self._write(mpu.memory, 0x011234, (0x78, 0x56))
+        self._write(mpu.memory, 0x01abcd, (0xbc, 0x9a))
+        self._write(mpu.memory, 0x0134cd, (0x10, 0x20))
+        # $0000 LDA ($fe)
+        self._write(mpu.memory, 0x0100, (0xa7, 0xfe))
+        mpu.step()
+        self.assertEqual(0x0102, mpu.pc)
+        self.assertEqual(0x2010, mpu.a)
+
+    def test_pc_wraps_bank_zero_boundary(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0xffff
+        mpu.a = 0xffff
+        mpu.x = 0x1111
+        # $ffff TXA
+        mpu.memory[0xffff] = 0x8a
+        mpu.step()
+        self.assertEqual(0x0000, mpu.pc)
+        self.assertEqual(0x1111, mpu.a)
+
+    def test_pc_wraps_bank_k_boundary(self):
+        mpu = self._make_mpu()
+        mpu.pc = 0xffff
+        mpu.pbr = 0x01
+        mpu.a = 0xffff
+        mpu.x = 0x1111
+        # $ffff TXA
+        mpu.memory[0x01ffff] = 0x8a
+        mpu.step()
+        self.assertEqual(0x0000, mpu.pc)
+        self.assertEqual(0x01, mpu.pbr)
+        self.assertEqual(0x1111, mpu.a)
 
     # ADC Absolute
 
@@ -4977,9 +5181,31 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         # $0000 MVN $00,$01
         self._write(mpu.memory, 0x0000, (0x54, 0X01, 0x00))
         self._write(mpu.memory, mpu.x, [0x55] * mpu.a)
-        for addr in range(mpu.x, 0x02ff):
+        for addr in range(mpu.x, 0x0300):
             self.assertEqual(0x55, mpu.memory[addr])
-        for addr in range(0x10100, 0x101ff):
+        for addr in range(0x10100, 0x10200):
+            mpu.step()
+            self.assertEqual(0x55, mpu.memory[addr])
+
+    def test_mvn_wrap_at_bank_boundary(self):
+        mpu = self._make_mpu()
+
+        mpu.pc = 0x100
+        mpu.x = 0xff80
+        mpu.y = 0xff80
+        mpu.a = 0x100
+        # $0100 MVN $00,$01
+        self._write(mpu.memory, 0x0100, (0x54, 0X01, 0x00))
+        self._write(mpu.memory, 0x0000, [0x55] * (mpu.a >> 1))
+        self._write(mpu.memory, mpu.x, [0x55] * (mpu.a >> 1))
+        for addr in range(0x0000, 0x0080):
+            self.assertEqual(0x55, mpu.memory[addr])
+        for addr in range(mpu.x, 0x10000):
+            self.assertEqual(0x55, mpu.memory[addr])
+        for addr in range(0x1ff80, 0x20000):
+            mpu.step()
+            self.assertEqual(0x55, mpu.memory[addr])
+        for addr in range(0x10000, 0x10080):
             mpu.step()
             self.assertEqual(0x55, mpu.memory[addr])
 
@@ -4994,9 +5220,31 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         # $0000 MVN $00,$01
         self._write(mpu.memory, 0x0000, (0x44, 0X01, 0x00))
         self._write(mpu.memory, 0x0200, [0x55] * mpu.a)
-        for addr in range(0x0200, 0x02ff):
+        for addr in range(0x0200, 0x0300):
             self.assertEqual(0x55, mpu.memory[addr])
-        for addr in range(0x101ff, 0x10100, -1):
+        for addr in range(0x101ff, 0x100ff, -1):
+            mpu.step()
+            self.assertEqual(0x55, mpu.memory[addr])
+
+    def test_mvp_wrap_at_bank_boundary(self):
+        mpu = self._make_mpu()
+
+        mpu.pc = 0x100
+        mpu.x = 0x007f
+        mpu.y = 0x007f
+        mpu.a = 0x100
+        # $0100 MVN $00,$01
+        self._write(mpu.memory, 0x0100, (0x44, 0X01, 0x00))
+        self._write(mpu.memory, 0x0000, [0x55] * (mpu.a >> 1))
+        self._write(mpu.memory, 0xff80, [0x55] * (mpu.a >> 1))
+        for addr in range(0x0000, 0x0080):
+            self.assertEqual(0x55, mpu.memory[addr])
+        for addr in range(0xff80, 0xffff):
+            self.assertEqual(0x55, mpu.memory[addr])
+        for addr in range(0x1007f, 0xffff, -1):
+            mpu.step()
+            self.assertEqual(0x55, mpu.memory[addr])
+        for addr in range(0x1ffff, 0x1ff7f, -1):
             mpu.step()
             self.assertEqual(0x55, mpu.memory[addr])
 

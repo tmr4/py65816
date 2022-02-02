@@ -588,7 +588,7 @@ class Common65816NativeTests:
         mpu.a = 0xABCD
         mpu.pbr = 0x01
         # $0000 PHK
-        mpu.memory[0x0000] = 0x4B
+        mpu.memory[0x010000] = 0x4B
         mpu.step()
         self.assertEqual(0x0001, mpu.pc)
         self.assertEqual(0xABCD, mpu.a)
