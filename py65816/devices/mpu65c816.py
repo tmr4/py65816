@@ -571,38 +571,151 @@ class MPU:
             data = self.WordAt(x())
 
         if self.p & self.DECIMAL:
-            # *** TODO: more to do here ***
-            halfcarry = 0
-            decimalcarry = 0
-            adjust0 = 0
-            adjust1 = 0
-            nibble0 = (data & 0xf) + (self.a & 0xf) + (self.p & self.CARRY)
-            if nibble0 > 9:
-                adjust0 = 6
-                halfcarry = 1
-            nibble1 = ((data >> 4) & 0xf) + ((self.a >> 4) & 0xf) + halfcarry
-            if nibble1 > 9:
-                adjust1 = 6
-                decimalcarry = 1
+            # Includes proposed fix from:
+            # https://github.com/mnaberez/py65/pull/55/commits/666cd9cd99484f769b563218214433d37faa1d87
+            # as discussed at: https://github.com/mnaberez/py65/issues/33
+            # 
+            # This now passed 8-bit BCD tests from: 
+            # http://6502.org/tutorials/decimal_mode.html#B
+            # that I've modeled at: C:\Users\tmrob\Documents\Projects\65C816\Assembler\decimal
+            # 
+            #       C:\Users\tmrob\Documents\Projects\65C816\Assembler\decimal>bcd
+            #       
+            #       C:\Users\tmrob\Documents\Projects\65C816\Assembler\decimal>py65816mon -m 65c816 -r bcd.bin -i fff0 -o fff1
+            #       Wrote +65536 bytes from $0000 to $ffff
+            #       -------------------------------------
+            #       65816 BCD Tests:
+            #       -------------------------------------
+            #       BCD,8
+            #       Mode     | Test | NV-BDIZC | Result |
+            #       -------------------------------------
+            #       Emulation  ADC    01-10111   PASS
+            #       Emulation  SBC    00-10111   PASS
+            #       
+            #       -------------------------------------
+            #       BCD,8
+            #       Mode     | Test | NVMXDIZC | Result |
+            #       -------------------------------------
+            #       Native-8   ADC    01110111   PASS
+            #       Native-8   SBC    00110111   PASS
+            #       
 
-            # the ALU outputs are not decimally adjusted
-            nibble0 = nibble0 & 0xf
-            nibble1 = nibble1 & 0xf
-            aluresult = (nibble1 << 4) + nibble0
+            # 8-bit
+            # *** TODO: should try to consolidate these ***
+            if self.p & self.MS:
 
-            # the final A contents will be decimally adjusted
-            nibble0 = (nibble0 + adjust0) & 0xf
-            nibble1 = (nibble1 + adjust1) & 0xf
-            self.p &= ~(self.CARRY | self.OVERFLOW | self.NEGATIVE | self.ZERO)
-            if aluresult == 0:
-                self.p |= self.ZERO
+                halfcarry = 0
+                decimalcarry = 0
+                adjust0 = 0
+                adjust1 = 0
+                nibble0 = (data & 0xf) + (self.a & 0xf) + (self.p & self.CARRY)
+                if nibble0 > 9:
+                    adjust0 = 6
+                    halfcarry = 1
+                nibble1 = ((data >> 4) & 0xf) + ((self.a >> 4) & 0xf) + halfcarry
+                if nibble1 > 9:
+                    adjust1 = 6
+                    decimalcarry = 1
+
+                # the ALU outputs are not decimally adjusted
+                nibble0 = nibble0 & 0xf
+                nibble1 = nibble1 & 0xf
+
+                # the final A contents will be decimally adjusted
+                nibble0 = (nibble0 + adjust0) & 0xf
+                nibble1 = (nibble1 + adjust1) & 0xf
+
+                # Update result for use in setting flags below
+                aluresult = (nibble1 << 4) + nibble0
+
+                self.p &= ~(self.CARRY | self.OVERFLOW | self.NEGATIVE | self.ZERO)
+                if aluresult == 0:
+                    self.p |= self.ZERO
+                else:
+                    if self.p & self.MS:
+                        self.p |= aluresult & self.NEGATIVE
+                if decimalcarry == 1:
+                    self.p |= self.CARRY
+                if (~(self.a ^ data) & (self.a ^ aluresult)) & self.NEGATIVE:
+                    self.p |= self.OVERFLOW
+                a = (nibble1 << 4) + nibble0
+
             else:
-                self.p |= aluresult & self.NEGATIVE
-            if decimalcarry == 1:
-                self.p |= self.CARRY
-            if (~(self.a ^ data) & (self.a ^ aluresult)) & self.NEGATIVE:
-                self.p |= self.OVERFLOW
-            self.a = (nibble1 << 4) + nibble0
+                # 16 bit
+                halfcarry = 0
+                decimalcarry = 0
+                adjust0 = 0
+                adjust1 = 0
+                nibble0 = (data & 0xf) + (self.a & 0xf) + (self.p & self.CARRY)
+
+#                self.memory[0xfff1] = 0x20
+#                self.memory[0xfff1] = nibble0 + 0x30
+#                self.memory[0xfff1] = 0x20
+#                self.memory[0xfff1] = (self.a & 0xf) + 0x30
+#                self.memory[0xfff1] = 0x20
+#                self.memory[0xfff1] = (data & 0xf) + 0x30
+#                self.memory[0xfff1] = 0x20
+#                self.memory[0xfff1] = (self.p & self.CARRY) + 0x30
+
+                if nibble0 > 9:
+                    adjust0 = 6
+                    halfcarry = 1
+                nibble1 = ((data >> 4) & 0xf) + ((self.a >> 4) & 0xf) + halfcarry
+                halfcarry = 0
+                if nibble1 > 9:
+                    adjust1 = 6
+                    halfcarry = 1
+
+                # continue with msb nibbles
+                adjust2 = 0
+                adjust3 = 0
+                nibble2 = (((data & 0xf00) + (self.a & 0xf00)) >> 8) + halfcarry
+                halfcarry = 0
+                if nibble2 > 9:
+                    adjust2 = 6
+                    halfcarry = 1
+                nibble3 = ((((data >> 4) & 0xf00) + ((self.a >> 4) & 0xf00)) >> 8) + halfcarry
+                if nibble3 > 9:
+                    adjust3 = 6
+                    decimalcarry = 1
+
+                # the ALU outputs are not decimally adjusted
+                nibble0 = nibble0 & 0xf
+                nibble1 = nibble1 & 0xf
+                nibble2 = nibble2 & 0xf
+                nibble3 = nibble3 & 0xf
+
+                # the final A contents will be decimally adjusted
+                nibble0 = (nibble0 + adjust0) & 0xf
+                nibble1 = (nibble1 + adjust1) & 0xf
+                nibble2 = (nibble2 + adjust2) & 0xf
+                nibble3 = (nibble3 + adjust3) & 0xf
+
+                # Update result for use in setting flags below
+                aluresult = (nibble3 << 12) + (nibble2 << 8) + (nibble1 << 4) + nibble0
+#                self.memory[0xfff1] = nibble3 + 0x30
+#                self.memory[0xfff1] = nibble2 + 0x30
+#                self.memory[0xfff1] = nibble1 + 0x30
+#                self.memory[0xfff1] = nibble0 + 0x30
+#                self.memory[0xfff1] = 0x20
+                
+                self.p &= ~(self.CARRY | self.OVERFLOW | self.NEGATIVE | self.ZERO)
+                if aluresult == 0:
+                    self.p |= self.ZERO
+                else:
+                    self.p |= (aluresult >> self.BYTE_WIDTH) & self.NEGATIVE
+
+                if decimalcarry == 1:
+                    self.p |= self.CARRY
+                #if (~(self.a ^ data) & (self.a ^ aluresult)) & self.NEGATIVE:
+                #    self.p |= self.OVERFLOW
+                a = aluresult
+
+                if ((~(self.a ^ data) & (self.a ^ aluresult)) >> self.BYTE_WIDTH) & self.NEGATIVE:
+                    self.p |= self.OVERFLOW
+
+            self.a = a
+
         else:
             if self.p & self.CARRY:
                 tmp = 1
@@ -705,15 +818,20 @@ class MPU:
             tbyte = self.ByteAt(addr())
         else:
             tbyte = self.WordAt(addr())
+
         self.p &= ~(self.CARRY | self.ZERO | self.NEGATIVE)
-        if register_value == tbyte:
+
+        result = register_value - tbyte
+
+        if result == 0:
             self.p |= self.CARRY | self.ZERO
-        elif register_value > tbyte:
+        elif result > 0:
             self.p |= self.CARRY
+
         if bit_flag:
-            self.p |= (register_value - tbyte) & self.NEGATIVE
+            self.p |= result & self.NEGATIVE
         else:
-            self.p |= ((register_value - tbyte) >> self.BYTE_WIDTH) & self.NEGATIVE
+            self.p |= (result >> self.BYTE_WIDTH) & self.NEGATIVE
 
     def opDECR(self, x):
         if x is None:
@@ -965,42 +1083,145 @@ class MPU:
             data = self.WordAt(x())
 
         if self.p & self.DECIMAL:
-            # *** TODO: more to do here ***
-            halfcarry = 1
-            decimalcarry = 0
-            adjust0 = 0
-            adjust1 = 0
+            # https://github.com/mnaberez/py65/pull/55/commits/666cd9cd99484f769b563218214433d37faa1d87
+            # as discussed at: https://github.com/mnaberez/py65/issues/33
+            # 
+            # This now passed 8-bit BCD tests from: 
+            # http://6502.org/tutorials/decimal_mode.html#B
+            # that I've modeled at: C:\Users\tmrob\Documents\Projects\65C816\Assembler\decimal
+            # 
+            #       C:\Users\tmrob\Documents\Projects\65C816\Assembler\decimal>bcd
+            #       
+            #       C:\Users\tmrob\Documents\Projects\65C816\Assembler\decimal>py65816mon -m 65c816 -r bcd.bin -i fff0 -o fff1
+            #       Wrote +65536 bytes from $0000 to $ffff
+            #       -------------------------------------
+            #       65816 BCD Tests:
+            #       -------------------------------------
+            #       BCD,8
+            #       Mode     | Test | NV-BDIZC | Result |
+            #       -------------------------------------
+            #       Emulation  ADC    01-10111   PASS
+            #       Emulation  SBC    00-10111   PASS
+            #       
+            #       -------------------------------------
+            #       BCD,8
+            #       Mode     | Test | NVMXDIZC | Result |
+            #       -------------------------------------
+            #       Native-8   ADC    01110111   PASS
+            #       Native-8   SBC    00110111   PASS
+            #       
 
-            nibble0 = (self.a & 0xf) + (~data & 0xf) + (self.p & self.CARRY)
-            if nibble0 <= 0xf:
-                halfcarry = 0
-                adjust0 = 10
-            nibble1 = ((self.a >> 4) & 0xf) + ((~data >> 4) & 0xf) + halfcarry
-            if nibble1 <= 0xf:
-                adjust1 = 10 << 4
+            # 8-bit
+            # *** TODO: should try to consolidate these ***
+            if self.p & self.MS:
 
-            # the ALU outputs are not decimally adjusted
-            aluresult = self.a + (~data & self.byteMask) + \
-                (self.p & self.CARRY)
+                halfcarry = 1
+                decimalcarry = 0
+                adjust0 = 0
+                adjust1 = 0
 
-            if aluresult > self.byteMask:
-                decimalcarry = 1
-            aluresult &= self.byteMask
+                nibble0 = (self.a & 0xf) + (~data & 0xf) + (self.p & self.CARRY)
+                if nibble0 <= 0xf:
+                    halfcarry = 0
+                    adjust0 = 10
+                nibble1 = ((self.a >> 4) & 0xf) + ((~data >> 4) & 0xf) + halfcarry
+                if nibble1 <= 0xf:
+                    adjust1 = 10 << 4
 
-            # but the final result will be adjusted
-            nibble0 = (aluresult + adjust0) & 0xf
-            nibble1 = ((aluresult + adjust1) >> 4) & 0xf
+                # the ALU outputs are not decimally adjusted
+                aluresult = self.a + (~data & self.byteMask) + \
+                    (self.p & self.CARRY)
 
-            self.p &= ~(self.CARRY | self.ZERO | self.NEGATIVE | self.OVERFLOW)
-            if aluresult == 0:
-                self.p |= self.ZERO
+                if aluresult > self.byteMask:
+                    decimalcarry = 1
+                aluresult &= self.byteMask
+
+                # but the final result will be adjusted
+                nibble0 = (aluresult + adjust0) & 0xf
+                nibble1 = ((aluresult + adjust1) >> 4) & 0xf
+
+                # Update result for use in setting flags below
+                aluresult = (nibble1 << 4) + nibble0
+
+                self.p &= ~(self.CARRY | self.ZERO | self.NEGATIVE | self.OVERFLOW)
+                if aluresult == 0:
+                    self.p |= self.ZERO
+                else:
+                    self.p |= aluresult & self.NEGATIVE
+                if decimalcarry == 1:
+                    self.p |= self.CARRY
+                if ((self.a ^ data) & (self.a ^ aluresult)) & self.NEGATIVE:
+                    self.p |= self.OVERFLOW
+                self.a = aluresult
             else:
-                self.p |= aluresult & self.NEGATIVE
-            if decimalcarry == 1:
-                self.p |= self.CARRY
-            if ((self.a ^ data) & (self.a ^ aluresult)) & self.NEGATIVE:
-                self.p |= self.OVERFLOW
-            self.a = (nibble1 << 4) + nibble0
+                # 16 bit
+                halfcarry = 1
+                decimalcarry = 0
+                adjust0 = 0
+                adjust1 = 0
+                nibble0 = (self.a & 0xf) + (~data & 0xf) + (self.p & self.CARRY)
+
+#                self.memory[0xfff1] = 0x20
+#                self.memory[0xfff1] = nibble0 + 0x30
+#                self.memory[0xfff1] = 0x20
+#                self.memory[0xfff1] = (self.a & 0xf) + 0x30
+#                self.memory[0xfff1] = 0x20
+#                self.memory[0xfff1] = (data & 0xf) + 0x30
+#                self.memory[0xfff1] = 0x20
+#                self.memory[0xfff1] = (self.p & self.CARRY) + 0x30
+#                self.a = (nibble1 << 4) + nibble0
+#                self.a = 0
+#                self.a = 0xffff
+
+                if nibble0 <= 0xf:
+                    halfcarry = 0
+                    adjust0 = 10
+                nibble1 = ((self.a >> 4) & 0xf) + ((~data >> 4) & 0xf) + halfcarry
+                halfcarry = 1
+                if nibble1 <= 0xf:
+                    halfcarry = 0
+                    adjust1 = 10 << 4
+
+                # continue with msb nibbles
+                adjust2 = 0
+                adjust3 = 0
+                nibble2 = (((self.a & 0xf00) + (~data & 0xf00)) >> 8) + halfcarry
+                halfcarry = 1
+                if nibble2 <= 0xf:
+                    halfcarry = 0
+                    adjust2 = 10
+                nibble3 = ((((self.a >> 4) & 0xf00) + ((~data >> 4) & 0xf00)) >> 8) + halfcarry
+                if nibble3 <= 0xf:
+                    adjust3 = 10 << 4
+
+                # the ALU outputs are not decimally adjusted
+                aluresult = self.a + (~data & self.addrMask) + (self.p & self.CARRY)
+
+                if aluresult > self.addrMask:
+                    decimalcarry = 1
+                aluresultL = aluresult & self.byteMask
+                aluresultH = (aluresult >> self.BYTE_WIDTH) & self.byteMask
+
+                # but the final result will be adjusted
+                nibble0 = (aluresultL + adjust0) & 0xf
+                nibble1 = ((aluresultL + adjust1) >> 4) & 0xf
+                nibble2 = (aluresultH + adjust2) & 0xf
+                nibble3 = ((aluresultH + adjust3) >> 4) & 0xf
+
+                # Update result for use in setting flags below
+                aluresult = (nibble3 << 12) + (nibble2 << 8) + (nibble1 << 4) + nibble0
+
+                self.p &= ~(self.CARRY | self.ZERO | self.NEGATIVE | self.OVERFLOW)
+                if aluresult == 0:
+                    self.p |= self.ZERO
+                else:
+                    self.p |= (aluresult >> self.BYTE_WIDTH) & self.NEGATIVE
+                if decimalcarry == 1:
+                    self.p |= self.CARRY
+                if (((self.a ^ data) & (self.a ^ aluresult)) >> self.BYTE_WIDTH) & self.NEGATIVE:
+                    self.p |= self.OVERFLOW
+                self.a = aluresult
+
         else:
             if self.p & self.MS:
                 result = self.a + (~data & self.byteMask) + (self.p & self.CARRY)

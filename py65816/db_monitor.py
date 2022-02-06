@@ -40,16 +40,6 @@ class dbMonitor(Monitor):
     Monitor.Microprocessors["65C816"] = CMOS65C816
     Monitor.Microprocessors["DB65C02"] = DB65C816
 
-#    def __init__(self, argv=['db_monitor.py', '-m', '65c816', '-r', 'forth.bin', '-i', '7fc0', '-o', '7fe0', '-d'],
-#    def __init__(self, argv=['db_monitor.py', '-m', '65c816', '-r', 'forth.bin', '-i', '7fc0', '-o', '7fe0'],
-#    def __init__(self, argv=['db_monitor.py', '-h'],
-#    def __init__(self, argv=['db_monitor.py', '-m', '65c816', '-r', 'c:\\Users\\tmrob\\Documents\\Projects\\Python\\Testing\\py65816\\py65816\\dforth_hw.bin', '-i', '7fc0', '-o', '7fe0', '-d'],
-#    def __init__(self, argv=['db_monitor.py', '-m', '65c816', '-r', 'c:\\Users\\tmrob\\Documents\\Projects\\Python\\Testing\\py65816\\py65816\\dforth_hw.bin', '-d'],
-#    def __init__(self, argv=['db_monitor.py', '-m', 'db65c02', '-r', 'c:\\Users\\tmrob\\Documents\\Projects\\Python\\Testing\\py65816\\py65816\\dforth_hw.bin', '-d',
-#                       '-v', '8800', '-a', '8400 c://Users//tmrob//Documents//Projects//Python//Testing//py65816//py65816//block.bin'],
-#                       stdin=None, stdout=None,
-#                       mpu_type=CMOS65C816, memory=None,
-#                       putc_addr=0xfff1, getc_addr=0xfff0):
     def __init__(self, argv=None, stdin=None, stdout=None,
                        mpu_type=CMOS65C816, memory=None,
                        putc_addr=0xF001, getc_addr=0xF004):

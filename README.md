@@ -46,13 +46,14 @@ Options:
 The py65816 monitor inherits from the py65 monitor so most monitor functions should be the same though I haven't tested many of them.  Mike Naberezny has provided online [documentation](https://py65.readthedocs.io/en/latest/).  The debug window provides a slightly enhanced subset of these commands (type `help` or `h` in the debug window).
 
 # Status
-1. About 98% of the code for the new 65C816 device is covered by unit tests and the device has passed them all.  Some known issues/limitations for the 65816 simulation:
+1. About 97% of the code for the new 65C816 device is covered by unit tests and the device has passed them all.  Some known issues/limitations for the 65816 simulation:
     * I use nose2 to evaluate test coverage.  View current unit test coverage with `nose2 --with-coverage` or `nose2 --with-coverage --coverage-report html` for a detailed html report.
-    * ADC and SBC in decimal mode are likely invalid in 16 bit.
     * Extra cycle counts haven't been tested for any new to 65816 opcodes nor direct page wrapping.
     * Some instructions operating in mixed register modes haven't been fully tested.  For example, TAY, TAX, TXA, TYA when one register is 8-bit and the other is 16-bit.
     * New 65816 instructions have generally not been tested in emulation mode.
     * Move block instructions haven't been tested in native 8-bit or emulation modes.
+    * FIXED: ADC and SBC in decimal mode are likely invalid in 16 bit.
+        * Addition and subtraction tested in decimal mode with valid BCD values and for C, Z, and N flags.  Need more unit tests for these, but they have passed Bruce Clark's 8-bit [Decimal Mode Tests](http://6502.org/tutorials/decimal_mode.html#B) and my 16-bit tests based on his formulas (I don't have independent 16-bit tests).  The overflow flag is calculated but I haven't tested whether the value is correct (the 16-bit tests take hours on my fastest computer).  I have not tested non-valid BCD values.
     * FIXED: Page and bank wrapping needs tested.  Don't count on these being the same as hardware right now.
     * FIXED: PEA and companion instructions haven't been tested.  At this point, assume they don't work properly.
 2. Interrupt handling is very limited, mainly just enough for my own requirements.  But it isn't hard to add other capabilities.  The main consideration is the source of the interrupt trigger.  For example, in my build I use the 65C22 shift register to capture a byte sent from a keyboard controller.  When the shift register receives a complete byte it requests an interrupt from the 6502.  I've modeled the shift register here in a similar way.  It will trigger an interrupt when a keystroke is available.
