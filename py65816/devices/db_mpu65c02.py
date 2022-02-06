@@ -23,10 +23,15 @@ class MPU(mpu65c02.MPU):
         if self.p & self.INTERRUPT:
             return
 
-        self.p &= ~self.BREAK
-        self.p | self.UNUSED
-
         self.stPushWord(self.pc)
+
+        # py65 has 
+        #   self.p &= ~self.BREAK
+        #   self.stPush(self.p | self.UNUSED)
+        # but a cleared break is only pushed onto the stack
+        # p itself is not actually changed
+        self.stPush(self.p & ~self.BREAK | self.UNUSED)
+
         self.stPush(self.p)
 
         self.p |= self.INTERRUPT

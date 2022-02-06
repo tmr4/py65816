@@ -667,21 +667,6 @@ class Common65816NativeTests:
         #self.assertEqual(mpu.CARRY, mpu.p & mpu.CARRY) # the datasheet show carry set but indicates it doesn't initialize it *** TODO: what does the hardware really do? ***
         self.assertEqual(0x1234, mpu.pc)
 
-    # RTI
-
-    def test_rti_restores_status_and_pc_and_updates_sp(self):
-        mpu = self._make_mpu()
-        # $0000 RTI
-        mpu.memory[0x0000] = 0x40
-        self._write(mpu.memory, 0x01FC, (0xFC, 0x03, 0xC0, 0x00))  # Status, PCL, PCH, PBR
-        mpu.sp = 0x1FB
-
-        mpu.step()
-        self.assertEqual(0xC003, mpu.pc)
-        self.assertEqual(0xFC,   mpu.p)
-        self.assertEqual(0x1FF,   mpu.sp)
-        self.assertEqual(0,   mpu.pbr)
-
     # RTL
 
     def test_rtl_restores_pbr_and_pc_and_updates_sp(self):

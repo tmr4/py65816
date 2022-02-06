@@ -5827,6 +5827,28 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(0xCF,   mpu.p)
         self.assertEqual(0x1FF,   mpu.sp)
 
+    def test_plp_16_bit_to_8_affects_registers(self):
+        mpu = self._make_mpu()
+        mpu.a = 0x1234
+        mpu.x = 0x1234
+        mpu.y = 0x1234
+        mpu.sp = 0x1FE
+        mpu.memory[0x01FF] = 0xBA
+        self.assertEqual(0, mpu.p & mpu.MS)
+        self.assertEqual(0, mpu.p & mpu.IRS)
+        # $0000 PLP
+        mpu.memory[0x0000] = 0x28
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x34, mpu.a)
+        self.assertEqual(0x12, mpu.b)
+        self.assertEqual(0x34, mpu.x)
+        self.assertEqual(0x34, mpu.y)
+        self.assertEqual(mpu.MS, mpu.p & mpu.MS)
+        self.assertEqual(mpu.IRS, mpu.p & mpu.IRS)
+        self.assertEqual(0xBA, mpu.p)
+        self.assertEqual(0x1FF, mpu.sp)
+
     # PLX
 
     def test_plx_pulls_two_bytes_from_stack_into_x_and_updates_sp(self):
@@ -6550,7 +6572,43 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(0x80, mpu.memory[0x0010 + mpu.x + 1])
         self.assertEqual(mpu.CARRY, mpu.p & mpu.CARRY)
 
+    # RTI
 
+    def test_rti_restores_status_and_pc_and_updates_sp(self):
+        mpu = self._make_mpu()
+        # $0000 RTI
+        mpu.memory[0x0000] = 0x40
+        self._write(mpu.memory, 0x01FC, (0xFC, 0x03, 0xC0, 0x00))  # Status, PCL, PCH, PBR
+        mpu.sp = 0x1FB
+
+        mpu.step()
+        self.assertEqual(0xC003, mpu.pc)
+        self.assertEqual(0xFC,   mpu.p)
+        self.assertEqual(0x1FF,   mpu.sp)
+        self.assertEqual(0,   mpu.pbr)
+
+    def test_rti_16_bit_to_8_affects_registers(self):
+        mpu = self._make_mpu()
+        mpu.a = 0x1234
+        mpu.x = 0x1234
+        mpu.y = 0x1234
+        mpu.sp = 0x01FB
+        self.assertEqual(0, mpu.p & mpu.MS)
+        self.assertEqual(0, mpu.p & mpu.IRS)
+        # $0000 RTI
+        mpu.memory[0x0000] = 0x40
+        self._write(mpu.memory, 0x01FC, (0xBA, 0x03, 0xC0, 0x00))  # Status, PCL, PCH
+        mpu.step()
+        self.assertEqual(0xC003, mpu.pc)
+        self.assertEqual(0x34, mpu.a)
+        self.assertEqual(0x12, mpu.b)
+        self.assertEqual(0x34, mpu.x)
+        self.assertEqual(0x34, mpu.y)
+        self.assertEqual(mpu.MS, mpu.p & mpu.MS)
+        self.assertEqual(mpu.IRS, mpu.p & mpu.IRS)
+        self.assertEqual(0xBA, mpu.p)
+        self.assertEqual(0x1FF, mpu.sp)
+        self.assertEqual(0,   mpu.pbr)
 
 
 
@@ -7551,6 +7609,25 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(0, mpu.p & mpu.ZERO)
         self.assertEqual(mpu.CARRY, mpu.p & mpu.CARRY)
 
+    # SEP
+
+    def test_sep_16_bit_to_8_affects_registers(self):
+        mpu = self._make_mpu()
+        mpu.a = 0x1234
+        mpu.x = 0x1234
+        mpu.y = 0x1234
+        self.assertEqual(0, mpu.p & mpu.MS)
+        self.assertEqual(0, mpu.p & mpu.IRS)
+        # $0000 SEP #$30
+        self._write(mpu.memory, 0x0000, (0xE2, 0x30))
+        mpu.step()
+        self.assertEqual(0x34, mpu.a)
+        self.assertEqual(0x12, mpu.b)
+        self.assertEqual(0x34, mpu.x)
+        self.assertEqual(0x34, mpu.y)
+        self.assertEqual(mpu.MS, mpu.p & mpu.MS)
+        self.assertEqual(mpu.IRS, mpu.p & mpu.IRS)
+
     # STA Absolute
 
     def test_sta_absolute_stores_a_leaves_a_and_n_flag_unchanged(self):
@@ -8304,8 +8381,37 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(0x00, mpu.x)
         self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
 
+    def test_tax_transfers_16_bit_accumulator_into_8_bit_x(self):
+        mpu = self._make_mpu()
+        mpu.a = 0xABCD
+        mpu.x = 0x00
+        self.assertEqual(0, mpu.p & mpu.IRS)
+        mpu.pSET(mpu.IRS) # 8-bit index registers
+        self.assertEqual(mpu.IRS, mpu.p & mpu.IRS)
+        # $0000 TAX
+        mpu.memory[0x0000] = 0xAA
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xABCD, mpu.a)
+        self.assertEqual(0xCD, mpu.x)
+
+    def test_tax_transfers_8_bit_accumulator_into_16_bit_x(self):
+        mpu = self._make_mpu()
+        mpu.a = 0xCD
+        mpu.b = 0xAB
+        mpu.x = 0x00
+        self.assertEqual(0, mpu.p & mpu.MS)
+        mpu.pSET(mpu.MS) # 8-bit accumulator
+        self.assertEqual(mpu.MS, mpu.p & mpu.MS)
+        # $0000 TAX
+        mpu.memory[0x0000] = 0xAA
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xABCD, mpu.x)
+        self.assertEqual(0xCD, mpu.a)
+        self.assertEqual(0xAB, mpu.b)
+
     # TAY
-    # *** TODO: need to test for 8/16 bit mix ***
 
     def test_tay_transfers_accumulator_into_y(self):
         mpu = self._make_mpu()
@@ -8343,6 +8449,36 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(0x00, mpu.a)
         self.assertEqual(0x00, mpu.y)
         self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+
+    def test_tay_transfers_16_bit_accumulator_into_8_bit_y(self):
+        mpu = self._make_mpu()
+        mpu.a = 0xABCD
+        mpu.y = 0x00
+        self.assertEqual(0, mpu.p & mpu.IRS)
+        mpu.pSET(mpu.IRS) # 8-bit index registers
+        self.assertEqual(mpu.IRS, mpu.p & mpu.IRS)
+        # $0000 TAY
+        mpu.memory[0x0000] = 0xA8
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xABCD, mpu.a)
+        self.assertEqual(0xCD, mpu.y)
+
+    def test_tay_transfers_8_bit_accumulator_into_16_bit_y(self):
+        mpu = self._make_mpu()
+        mpu.a = 0xCD
+        mpu.b = 0xAB
+        mpu.y = 0x00
+        self.assertEqual(0, mpu.p & mpu.MS)
+        mpu.pSET(mpu.MS) # 8-bit accumulator
+        self.assertEqual(mpu.MS, mpu.p & mpu.MS)
+        # $0000 TAY
+        mpu.memory[0x0000] = 0xA8
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0xABCD, mpu.y)
+        self.assertEqual(0xCD, mpu.a)
+        self.assertEqual(0xAB, mpu.b)
 
     # TCD
 
@@ -8639,7 +8775,6 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
 
     # TXA
-    # *** TODO: need to test for 8/16 bit mix ***
 
     def test_txa_transfers_x_into_a(self):
         mpu = self._make_mpu()
@@ -8677,6 +8812,38 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(0x00, mpu.a)
         self.assertEqual(0x00, mpu.x)
         self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
+
+    def test_txa_transfers_16_bit_x_into_8_bit_accumulator(self):
+        mpu = self._make_mpu()
+        mpu.a = 0xCD
+        mpu.b = 0xAB
+        mpu.x = 0x1234
+        self.assertEqual(0, mpu.p & mpu.MS)
+        mpu.pSET(mpu.MS) # 8-bit accumulator
+        self.assertEqual(mpu.MS, mpu.p & mpu.MS)
+        # $0000 TXA
+        mpu.memory[0x0000] = 0x8A
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x34, mpu.a)
+        self.assertEqual(0xAB, mpu.b)
+        self.assertEqual(0x1234, mpu.x)
+
+    def test_txa_transfers_8_bit_x_into_16_bit_accumulator(self):
+        mpu = self._make_mpu()
+        mpu.a = 0xABCD
+        mpu.b = 0x0
+        mpu.x = 0x34
+        self.assertEqual(0, mpu.p & mpu.IRS)
+        mpu.pSET(mpu.IRS) # 8-bit index registers
+        self.assertEqual(mpu.IRS, mpu.p & mpu.IRS)
+        # $0000 TXA
+        mpu.memory[0x0000] = 0x8A
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x34, mpu.x)
+        self.assertEqual(0x34, mpu.a)
+        self.assertEqual(0x0, mpu.b)
 
     # TXS
 
@@ -8716,7 +8883,7 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
 
     # TXY
 
-    def test_txy_transfers_x_into_a(self):
+    def test_txy_transfers_x_into_y(self):
         mpu = self._make_mpu()
         mpu.x = 0xABCD
         mpu.y = 0x00
@@ -8754,7 +8921,6 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
 
     # TYA
-    # *** TODO: need to test for 8/16 bit mix ***
 
     def test_tya_transfers_y_into_a(self):
         mpu = self._make_mpu()
@@ -8793,9 +8959,41 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(mpu.ZERO, mpu.p & mpu.ZERO)
         self.assertEqual(0x0001, mpu.pc)
 
+    def test_tya_transfers_16_bit_y_into_8_bit_accumulator(self):
+        mpu = self._make_mpu()
+        mpu.a = 0xCD
+        mpu.b = 0xAB
+        mpu.y = 0x1234
+        self.assertEqual(0, mpu.p & mpu.MS)
+        mpu.pSET(mpu.MS) # 8-bit accumulator
+        self.assertEqual(mpu.MS, mpu.p & mpu.MS)
+        # $0000 TYA
+        mpu.memory[0x0000] = 0x98
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x34, mpu.a)
+        self.assertEqual(0xAB, mpu.b)
+        self.assertEqual(0x1234, mpu.y)
+
+    def test_tya_transfers_8_bit_y_into_16_bit_accumulator(self):
+        mpu = self._make_mpu()
+        mpu.a = 0xABCD
+        mpu.b = 0x0
+        mpu.y = 0x34
+        self.assertEqual(0, mpu.p & mpu.IRS)
+        mpu.pSET(mpu.IRS) # 8-bit index registers
+        self.assertEqual(mpu.IRS, mpu.p & mpu.IRS)
+        # $0000 TYA
+        mpu.memory[0x0000] = 0x98
+        mpu.step()
+        self.assertEqual(0x0001, mpu.pc)
+        self.assertEqual(0x34, mpu.y)
+        self.assertEqual(0x34, mpu.a)
+        self.assertEqual(0x0, mpu.b)
+
     # TYX
 
-    def test_tyx_transfers_x_into_a(self):
+    def test_tyx_transfers_y_into_x(self):
         mpu = self._make_mpu()
         mpu.y = 0xABCD
         mpu.x = 0x00

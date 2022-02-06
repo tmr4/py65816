@@ -66,7 +66,6 @@ class MPU:
         # init
         self.reset()
 
-# *** TODO: ***
     def reprformat(self):
         if self.mode:
             return ("%s PC   AC XR YR SP NV-BDIZC\n"
@@ -75,7 +74,6 @@ class MPU:
             return ("%s B  K  PC   AC   XR   YR   SP   D    NVMXDIZC\n"
                     "%s: %02x %02x:%04x %04x %04x %04x %04x %04x %s")
 
-# *** TODO: ***
     def __repr__(self):
         flags = itoa(self.p, 2).rjust(self.BYTE_WIDTH, '0')
         indent = ' ' * (len(self.name) + 1)
@@ -127,14 +125,20 @@ class MPU:
         if self.p & self.INTERRUPT:
             return
 
-        if self.mode:
-            self.p &= ~self.BREAK
-            self.p | self.UNUSED
-        else:
+        if self.mode == 0:
             self.stPush(self.pbr)
 
         self.stPushWord(self.pc)
-        self.stPush(self.p)
+
+        if self.mode:
+            # py65 has 
+            #   self.p &= ~self.BREAK
+            #   self.stPush(self.p | self.UNUSED)
+            # but a cleared break is only pushed onto the stack
+            # p itself is not actually changed
+            self.stPush(self.p & ~self.BREAK | self.UNUSED)
+        else:
+            self.stPush(self.p)
 
         self.p |= self.INTERRUPT
         self.pbr = 0
@@ -143,14 +147,20 @@ class MPU:
 
     def nmi(self):
         # triggers an NMI in the processor
-        if self.mode:
-            self.p &= ~self.BREAK
-            self.p | self.UNUSED
-        else:
+        if self.mode == 0:
             self.stPush(self.pbr)
 
         self.stPushWord(self.pc)
-        self.stPush(self.p)
+
+        if self.mode:
+            # py65 has 
+            #   self.p &= ~self.BREAK
+            #   self.stPush(self.p | self.UNUSED)
+            # but a cleared break is only pushed onto the stack
+            # p itself is not actually changed
+            self.stPush(self.p & ~self.BREAK | self.UNUSED)
+        else:
+            self.stPush(self.p)
 
         self.p |= self.INTERRUPT
         self.pbr = 0
@@ -180,7 +190,6 @@ class MPU:
     def OperandByte(self):
         return self.ByteAt(self.OperandAddr())
 
-    # *** TODO: likely these next two need some form of bank boundary WrapAt ***
     def OperandWord(self):
         return self.WordAt(self.OperandAddr())
 
@@ -540,7 +549,7 @@ class MPU:
         self.pc = (self.pbr << self.ADDR_WIDTH) + addr & self.addrMask
 
     # These is the WDC Programming Manual breakdown for stack addressing
-    # *** TODO: these need cleaned up. Don't need so many distictions. ***
+    # *** TODO: these need cleaned up. Don't need so many distinctions. ***
     # Stack Absolute Addressing "ska" (1 opcode) modeled directly
     # Stack Direct Page Indirect Addressing "ski" (1 opcode) modeled directly
     # Stack Interrupt Addressing "stk" (2 opcodes) modeled directly
@@ -1255,18 +1264,18 @@ class MPU:
             self.memory[addr] = self.a & self.byteMask
             self.memory[addr+1] = (self.a >> self.BYTE_WIDTH) & self.byteMask
 
-    # *** TODO: do we really need this here? can x/y MSB be non-zero when IRS is 1? ***
     def opSTX(self, y):
         addr = y()
+        # need to be explicit with mode as bit 4 can be 0 in mode 1 with an interrupt
         if (self.p & self.IRS) or self.mode:
             self.memory[addr] = self.x & self.byteMask
         else:
             self.memory[addr] = self.x & self.byteMask
             self.memory[addr+1] = (self.x >> self.BYTE_WIDTH) & self.byteMask
 
-    # *** TODO: do we really need this here? can x/y MSB be non-zero when IRS is 1? ***
     def opSTY(self, x):
         addr = x()
+        # need to be explicit with mode as bit 4 can be 0 in mode 1 with an interrupt
         if (self.p & self.IRS) or self.mode:
             self.memory[addr] = self.y & self.byteMask
         else:
@@ -1582,6 +1591,9 @@ class MPU:
     def inst_0x28(self):
         p = self.stPop()
         if self.mode:
+            # *** TODO:
+            # the 65816 Programming manual has the this can change the BREAK flag
+            # verify this isn't true ***
             self.p = p | self.BREAK | self.UNUSED
         else:
             if p & self.MS != self.p & self.MS:
@@ -1594,7 +1606,7 @@ class MPU:
                     self.a = (self.b << self.BYTE_WIDTH) + self.a
                     self.b = 0
             if p & self.IRS != self.p & self.IRS:
-                if (self.p & self.IRS) or self.mode:
+                if p & self.IRS:
                     # X,Y 16 => 8, truncate X,Y
                     self.x = self.x & self.byteMask
                     self.y = self.y & self.byteMask
@@ -1722,14 +1734,31 @@ class MPU:
 
     @instruction(name="RTI", mode="stk", cycles=6)
     def inst_0x40(self):
-        # *** TODO: should this be similar to PLP? ***
+        # *** TODO: should this be similar to PLP? Probaby. ***
         if self.mode:
             self.p = (self.stPop() | self.BREAK | self.UNUSED)
             self.pc = self.stPopWord()
         else:
-            self.p = self.stPop()
+            p = self.stPop()
             self.pc = self.stPopWord()
             self.pbr = self.stPop()
+
+            # reflect any change in register modes
+            if p & self.MS != self.p & self.MS:
+                if p & self.MS:
+                    # A 16 => 8, save B, mask off high byte of A
+                    self.b = (self.a >> self.BYTE_WIDTH) & self.byteMask
+                    self.a = self.a & self.byteMask
+                else:
+                    # A 8 => 16, set A = b a
+                    self.a = (self.b << self.BYTE_WIDTH) + self.a
+                    self.b = 0
+            if p & self.IRS != self.p & self.IRS:
+                if p & self.IRS:
+                    # X,Y 16 => 8, truncate X,Y
+                    self.x = self.x & self.byteMask
+                    self.y = self.y & self.byteMask
+            self.p = p
 
     @instruction(name="EOR", mode="dix", cycles=6)
     def inst_0x41(self):
@@ -2151,7 +2180,7 @@ class MPU:
 
     @instruction(name="BIT", mode="imm", cycles=2)
     def inst_0x89(self):
-        # *** TODO: consider using op BIT using: ***
+        # *** TODO: consider using opBIT using: ***
         #p = self.p
         #self.opBIT(self.ImmediateAddr)
         # This instruction (BIT #$12) does not use opBIT because in the
@@ -2167,7 +2196,10 @@ class MPU:
 
     @instruction(name="TXA", mode="imp", cycles=2)
     def inst_0x8a(self):
-        if self.p & self.MS and self.isCLR(self.IRS):
+        # let's be explicit on mode here because interrupts can affect BREAK flag
+        # which is the same as IRS, result is the same though, transfer lsb
+        if self.p & self.MS and (self.isCLR(self.IRS) and self.mode == 0):
+        #if self.p & self.MS and self.isCLR(self.IRS):
             # A is 8 bit and X is 16 bit
             self.a = self.x & self.byteMask
         else:
@@ -2244,7 +2276,10 @@ class MPU:
 
     @instruction(name="TYA", mode="imp", cycles=2)
     def inst_0x98(self):
-        if self.p & self.MS and self.isCLR(self.IRS):
+        # let's be explicit on mode here because interrupts can affect BREAK flag
+        # which is the same as IRS, result is the same though, transfer lsb
+        if self.p & self.MS and (self.isCLR(self.IRS) and self.mode == 0):
+        #if self.p & self.MS and self.isCLR(self.IRS):
             # A is 8 bit and Y is 16 bit
             self.a = self.y & self.byteMask
         else:
@@ -2342,7 +2377,8 @@ class MPU:
 
     @instruction(name="TAY", mode="imp", cycles=2)
     def inst_0xa8(self):
-        if self.p & self.MS and self.isCLR(self.IRS):
+        # need to be explicit on mode here because interrupts can affect BREAK flag which is the same as IRS
+        if self.p & self.MS and (self.isCLR(self.IRS) and self.mode == 0):
             # A is 8 bit and Y is 16 bit, hidden B is transfered as well
             self.y = (self.b << self.BYTE_WIDTH) + self.a
         elif self.isCLR(self.MS) and self.isSET(self.IRS):
@@ -2365,6 +2401,7 @@ class MPU:
 
     @instruction(name="TAX", mode="imp", cycles=2)
     def inst_0xaa(self):
+        # need to be explicit on mode here because interrupts can affect BREAK flag which is the same as IRS
         if self.p & self.MS and (self.isCLR(self.IRS) and self.mode == 0):
             # A is 8 bit and X is 16 bit, hidden B is transfered as well
             self.x = (self.b << self.BYTE_WIDTH) + self.a
@@ -2781,9 +2818,8 @@ class MPU:
             b = (self.a >> self.BYTE_WIDTH) & self.byteMask
             self.a = (a << self.BYTE_WIDTH) + b
 
-        # *** TODO: check if B is ever relevant w/ 16-bit A.
-        # Basically, do I need to maintain a hidden B even when I have
-        # it as the high byte in A. ***
+        # *** I don't think B is relevant w/ 16-bit A so I don't
+        # maintain a hidden B in this mode ***
 
         self.FlagsNZ(b)
 

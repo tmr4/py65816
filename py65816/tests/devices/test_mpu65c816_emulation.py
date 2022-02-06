@@ -252,6 +252,17 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         self.assertEqual(0xab34, mpu.pc)
         self.assertEqual(0x01, mpu.pbr)
 
+    def test_jmp_ail_wraps_at_bank_zero_boundary_2(self):
+        mpu = self._make_mpu()
+        # $0100 JMP [$fffe]
+        mpu.pc = 0x0100
+        self._write(mpu.memory, 0x0100, (0xDC, 0xfe, 0xff))
+        self._write(mpu.memory, 0xfffe, (0x34, 0x12, 0x01))
+        self._write(mpu.memory, 0x0000, (0x01, 0x02))
+        mpu.step()
+        self.assertEqual(0x1234, mpu.pc)
+        self.assertEqual(0x01, mpu.pbr)
+
     def test_jmp_aix_wraps_at_bank_k_boundary(self):
         mpu = self._make_mpu()
         mpu.x = 0xff
@@ -379,32 +390,33 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
 
     def test_irq_pushes_pc_and_correct_status_then_sets_pc_to_irq_vector(self):
         mpu = self._make_mpu()
-        mpu.p = mpu.UNUSED # enable interrupts
+        mpu.p &= ~mpu.INTERRUPT # enable interrupts
         self._write(mpu.memory, 0xFFFA, (0x88, 0x77))
         self._write(mpu.memory, 0xFFFE, (0xCD, 0xAB))
         mpu.pc = 0xC123
+        p = mpu.p
         mpu.irq()
         self.assertEqual(0xABCD, mpu.pc)
         self.assertEqual(0xC1, mpu.memory[0x1FF])  # PCH
         self.assertEqual(0x23, mpu.memory[0x1FE])  # PCL
-        self.assertEqual(mpu.UNUSED, mpu.memory[0x1FD])  # Status
+        self.assertEqual(p & ~mpu.BREAK, mpu.memory[0x1FD])  # Status
         self.assertEqual(0xFC, mpu.sp)
-        self.assertEqual(mpu.UNUSED | mpu.INTERRUPT, mpu.p)
+        self.assertEqual(mpu.BREAK | mpu.UNUSED | mpu.INTERRUPT, mpu.p)
         self.assertEqual(7, mpu.processorCycles)
 
     def test_nmi_pushes_pc_and_correct_status_then_sets_pc_to_nmi_vector(self):
         mpu = self._make_mpu()
-        mpu.p = mpu.UNUSED
         self._write(mpu.memory, 0xFFFA, (0x88, 0x77))
         self._write(mpu.memory, 0xFFFE, (0xCD, 0xAB))
         mpu.pc = 0xC123
+        p = mpu.p
         mpu.nmi()
         self.assertEqual(0x7788, mpu.pc)
         self.assertEqual(0xC1, mpu.memory[0x1FF])  # PCH
         self.assertEqual(0x23, mpu.memory[0x1FE])  # PCL
-        self.assertEqual(mpu.UNUSED, mpu.memory[0x1FD])  # Status
+        self.assertEqual(p & ~mpu.BREAK, mpu.memory[0x1FD])  # Status
         self.assertEqual(0xFC, mpu.sp)
-        self.assertEqual(mpu.UNUSED | mpu.INTERRUPT, mpu.p)
+        self.assertEqual(mpu.BREAK | mpu.UNUSED | mpu.INTERRUPT, mpu.p)
         self.assertEqual(7, mpu.processorCycles)
 
     # JMP Indirect
@@ -433,7 +445,7 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
 
     # RTI
 
-    def test_rti_forces_break_and_unused_flags_high(self):
+    def test_rti_break_and_unused_flags_stay_high(self):
         mpu = self._make_mpu()
         # $0000 RTI
         mpu.memory[0x0000] = 0x40

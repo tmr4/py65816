@@ -95,25 +95,29 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
 
     def test_brk_pushes_pc_plus_2_and_status_then_sets_pc_to_irq_vector(self):
         mpu = self._make_mpu()
-        mpu.p = mpu.BREAK | mpu.UNUSED
         self._write(mpu.memory, 0xFFFE, (0xCD, 0xAB))
         # $C000 BRK
         mpu.memory[0xC000] = 0x00
         mpu.pc = 0xC000
-        p = mpu.p | mpu.BREAK
+        p = mpu.p
         mpu.step()
         self.assertEqual(0xABCD, mpu.pc)
 
-        self.assertEqual(0xC0, mpu.memory[0x1FF])  # PCH
-        self.assertEqual(0x02, mpu.memory[0x1FE])  # PCL
-        self.assertEqual(p | mpu.BREAK | mpu.UNUSED, mpu.memory[0x1FD])  # Status
-        self.assertEqual(0xFC, mpu.sp)
+        self.assertEqual(0xC0, mpu.memory[0x1FC])  # PCH
+        self.assertEqual(0x02, mpu.memory[0x1FB])  # PCL
+        self.assertEqual(p, mpu.memory[0x1FA])  # Status
+        self.assertEqual(0xF9, mpu.sp)
 
         self.assertEqual(mpu.BREAK | mpu.UNUSED | mpu.INTERRUPT, mpu.p)
 
     # IRQ and NMI handling (very similar to BRK)
 
-    def test_irq_pushes_pc_and_correct_status_then_sets_pc_to_irq_vector(self):
+    def test_irq_another_interrupt_does_nothing(self):
+        mpu = self._make_mpu()
+        mpu.irq()
+        self.assertEqual(0xFC, mpu.sp)
+
+    def dont_test_irq_with_cli_another_interrupt_pushes_pc_and_correct_status_then_sets_pc_to_irq_vector(self):
         mpu = self._make_mpu()
         mpu.p = mpu.UNUSED # enable interrupts
         self._write(mpu.memory, 0xFFFA, (0x88, 0x77))
@@ -128,19 +132,19 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         self.assertEqual(mpu.UNUSED | mpu.INTERRUPT, mpu.p)
         self.assertEqual(7, mpu.processorCycles)
 
-    def test_nmi_pushes_pc_and_correct_status_then_sets_pc_to_nmi_vector(self):
+    def test_nmi_in_irq_pushes_pc_and_correct_status_then_sets_pc_to_nmi_vector(self):
         mpu = self._make_mpu()
-        mpu.p = mpu.UNUSED
         self._write(mpu.memory, 0xFFFA, (0x88, 0x77))
         self._write(mpu.memory, 0xFFFE, (0xCD, 0xAB))
         mpu.pc = 0xC123
+        p = mpu.p
         mpu.nmi()
         self.assertEqual(0x7788, mpu.pc)
-        self.assertEqual(0xC1, mpu.memory[0x1FF])  # PCH
-        self.assertEqual(0x23, mpu.memory[0x1FE])  # PCL
-        self.assertEqual(mpu.UNUSED, mpu.memory[0x1FD])  # Status
-        self.assertEqual(0xFC, mpu.sp)
-        self.assertEqual(mpu.UNUSED | mpu.INTERRUPT, mpu.p)
+        self.assertEqual(0xC1, mpu.memory[0x1FC])  # PCH
+        self.assertEqual(0x23, mpu.memory[0x1FB])  # PCL
+        self.assertEqual(p & ~mpu.BREAK, mpu.memory[0x1FA])  # Status
+        self.assertEqual(0xF9, mpu.sp)
+        self.assertEqual(mpu.BREAK | mpu.UNUSED | mpu.INTERRUPT, mpu.p)
         self.assertEqual(7, mpu.processorCycles)
 
     # JMP Indirect
@@ -163,9 +167,9 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         mpu.pc = 0xC000
         mpu.step()
         self.assertEqual(0xFFD2, mpu.pc)
-        self.assertEqual(0xFD,   mpu.sp)
-        self.assertEqual(0xC0,   mpu.memory[0x01FF])  # PCH
-        self.assertEqual(0x02,   mpu.memory[0x01FE])  # PCL+2
+        self.assertEqual(0xFA,   mpu.sp) # we're already in an interrupt
+        self.assertEqual(0xC0,   mpu.memory[0x01FC])  # PCH
+        self.assertEqual(0x02,   mpu.memory[0x01FB])  # PCL+2
 
     # RTI
 
@@ -202,8 +206,8 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         mpu.step()
         self.assertEqual(0x0001, mpu.pc)
         self.assertEqual(0xAB, mpu.a)
-        self.assertEqual(0xAB, mpu.memory[0x01FF])
-        self.assertEqual(0xFE, mpu.sp)
+        self.assertEqual(0xAB, mpu.memory[0x01FC])
+        self.assertEqual(0xFB, mpu.sp)
 
     # PHP
 
@@ -216,8 +220,8 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
             mpu.step()
             self.assertEqual(0x0001, mpu.pc)
             self.assertEqual((flags | mpu.BREAK | mpu.UNUSED),
-                             mpu.memory[0x1FF])
-            self.assertEqual(0xFE, mpu.sp)
+                             mpu.memory[0x1FC])
+            self.assertEqual(0xFB, mpu.sp)
 
     # PHX
 
@@ -229,8 +233,8 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         mpu.step()
         self.assertEqual(0x0001, mpu.pc)
         self.assertEqual(0xAB, mpu.x)
-        self.assertEqual(0xAB, mpu.memory[0x01FF])
-        self.assertEqual(0xFE, mpu.sp)
+        self.assertEqual(0xAB, mpu.memory[0x01FC])
+        self.assertEqual(0xFB, mpu.sp)
         self.assertEqual(3, mpu.processorCycles)
 
     # PHY
@@ -243,8 +247,8 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         mpu.step()
         self.assertEqual(0x0001, mpu.pc)
         self.assertEqual(0xAB, mpu.y)
-        self.assertEqual(0xAB, mpu.memory[0x01FF])
-        self.assertEqual(0xFE, mpu.sp)
+        self.assertEqual(0xAB, mpu.memory[0x01FC])
+        self.assertEqual(0xFB, mpu.sp)
         self.assertEqual(3, mpu.processorCycles)
 
     # PLA
@@ -309,7 +313,7 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         self._write(mpu.memory, 0x0000, (0xC2, 0x30))
         mpu.step()
         self.assertEqual(mpu.UNUSED, mpu.p & mpu.UNUSED)
-        self.assertEqual(0, mpu.p & mpu.BREAK) # we're in an interrupt
+        self.assertEqual(mpu.BREAK, mpu.p & mpu.BREAK) # we're in an interrupt but BREAK doesn't change
 
     def test_rep_can_reset_other_bits(self):
         mpu = self._make_mpu()
@@ -478,13 +482,18 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         #   * set memory to 0x10000 * [0xAA]
         mpu = self._make_mpu()
         self.assertEqual(1, mpu.mode)
-        #self.assertEqual(mpu.BREAK | mpu.UNUSED | mpu.INTERRUPT, mpu.p)
+        self.assertEqual(mpu.BREAK | mpu.UNUSED | mpu.INTERRUPT, mpu.p)
         # simulating in an interrupt
-        self.assertEqual(mpu.UNUSED | mpu.INTERRUPT, mpu.p)
-        self.assertEqual(0xff, mpu.sp)
+        self.assertEqual(0xfc, mpu.sp)
         for addr in range(0x10000):
-            self.assertEqual(0xAA, mpu.memory[addr])
-
+            if addr == 0xff:
+                self.assertEqual(0x12, mpu.memory[addr])
+            elif addr == 0xfe:
+                self.assertEqual(0x34, mpu.memory[addr])
+            elif addr == 0xfd:
+                self.assertEqual(mpu.UNUSED | mpu.INTERRUPT, mpu.memory[addr])
+            else:
+                self.assertEqual(0xAA, mpu.memory[addr])
 
     # Test Helpers
 
@@ -494,15 +503,17 @@ class MPUTests(unittest.TestCase, Common6502Tests, Common65C02Tests):
         if 'memory' not in kargs:
             mpu.memory = 0x10000 * [0xAA]
 
-        # simulate that we're in an interrupt
-        mpu.pCLR(mpu.BREAK)
-        #mpu.pSET(mpu.INTERRUPT) # already set
-
         # py65 mpus have sp set to $ff, I've modeled the 65816
         # based on the physical chip which requires sp to be set
         # in software.  The core tests assume sp is set to $ff,
         # so we have to set sp here
-        mpu.sp = 0xff 
+
+        # simulate that we're in an break caused interrupt
+        #mpu.pSET(mpu.INTERRUPT) # already set
+        mpu.memory[0xff] = 0x12 # push fake pc
+        mpu.memory[0xfe] = 0x34
+        mpu.memory[0xfd] = mpu.p & ~mpu.BREAK | mpu.UNUSED # p pushed with BREAK flag cleared
+        mpu.sp = 0xfc
         
         return mpu
 
