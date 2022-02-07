@@ -1734,7 +1734,6 @@ class MPU:
 
     @instruction(name="RTI", mode="stk", cycles=6)
     def inst_0x40(self):
-        # *** TODO: should this be similar to PLP? Probaby. ***
         if self.mode:
             self.p = (self.stPop() | self.BREAK | self.UNUSED)
             self.pc = self.stPopWord()
@@ -2902,11 +2901,13 @@ class MPU:
 
     @instruction(name="XCE", mode="imp", cycles=2) # new to 65816
     def inst_0xfb(self):
-        # *** TODO: 65816 Programming Manual, pg 423,
-        # describes these action as only happening when actually switching
-        # modes.  Verify that M and X don't change if XCE is called when
-        # already in the selected mode (i.e., XCE can't be used as a fast
-        # way to change to 8 bit registers). ***
+        # 65816 Programming Manual, pg 423, describes these action as 
+        # only happening when actually switching modes. 
+        # I verified on the W65C265SXB that the registers, M and X don't
+        # change if XCE is executed called in native mode with carry cleared
+        # (native => native).  I couldn't test emulation => emulation
+        # becuase the W65C265SXB monitor doesn't seem to work in emulation mode.
+        # *** TODO: verify emulation => emulation transfer on 65816 ***
         if self.mode and self.isCLR(self.CARRY): # emul => native
             self.pSET(self.MS)
             self.pSET(self.IRS)

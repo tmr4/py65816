@@ -8342,7 +8342,6 @@ class MPUTests(unittest.TestCase, Common65816NativeTests):
         self.assertEqual(4, mpu.processorCycles)
 
     # TAX
-    # *** TODO: need to test for 8/16 bit mix ***
 
     def test_tax_transfers_accumulator_into_x(self):
         mpu = self._make_mpu()
