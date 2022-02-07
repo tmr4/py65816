@@ -53,7 +53,7 @@ The py65816 monitor inherits from the py65 monitor so most monitor functions sho
     * New 65816 instructions have generally not been tested in emulation mode.
     * Move block instructions haven't been tested in native 8-bit or emulation modes.
     * FIXED: ADC and SBC in decimal mode are likely invalid in 16 bit.
-        * Addition and subtraction tested in decimal mode with valid BCD values and for C, Z, and N flags.  Need more unit tests for these, but they have passed Bruce Clark's 8-bit [Decimal Mode Tests](http://6502.org/tutorials/decimal_mode.html#B) and my 16-bit tests based on his formulas (I don't have independent 16-bit tests).  The overflow flag is calculated but I haven't tested whether the value is correct (the 16-bit tests take hours on my fastest computer).  I have not tested non-valid BCD values.
+        * Addition and subtraction tested in decimal mode with valid BCD values and for C, Z, and N flags.  Need more unit tests for these, but they have passed Bruce Clark's 8-bit [Decimal Mode Tests](http://6502.org/tutorials/decimal_mode.html#B) and my 16-bit tests based on his formulas (I don't have independent 16-bit tests).  The overflow flag is calculated but I haven't tested whether the value is correct (the 16-bit tests take days to run on my fastest computer).  I have not tested non-valid BCD values.
     * FIXED: Page and bank wrapping needs tested.  Don't count on these being the same as hardware right now.
     * FIXED: Some instructions operating in mixed register modes haven't been fully tested.  For example, TAY, TAX, TXA, TYA when one register is 8-bit and the other is 16-bit.
     * FIXED: PEA and companion instructions haven't been tested.  At this point, assume they don't work properly.
