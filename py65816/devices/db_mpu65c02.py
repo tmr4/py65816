@@ -32,8 +32,6 @@ class MPU(mpu65c02.MPU):
         # p itself is not actually changed
         self.stPush(self.p & ~self.BREAK | self.UNUSED)
 
-        self.stPush(self.p)
-
         self.p |= self.INTERRUPT
         self.pc = self.WordAt(self.IRQ)
         self.processorCycles += 7

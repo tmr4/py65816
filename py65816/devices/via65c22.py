@@ -59,15 +59,20 @@ class VIA():
                     self.SRThread = False
 
         def SR_thread():
+            mpu = self.mpu
             while(self.SRThread):
-                time.sleep(.05) # delay needed to allow processing of interrupt prior to setting it again *** TODO: would be nice to eliminate this with a flag or something ***
-                if (self.mpu.p & self.mpu.INTERRUPT == 0) and self.mpu.IRQ_pin:
-                    if db_console.kbhit():
-                        self.mpu.memory[self.VIA_IFR] |= 0x04
-                        self.mpu.IRQ_pin = 0
-                        count_irq = 0   # we need a short delay here
-                        while count_irq < 100:
-                            count_irq += 1
+                # See ACIA for discussion of giving emulator time to process interrupt
+#                time.sleep(.05) 
+                if (mpu.IRQ_pin == 1) and (mpu.p & mpu.INTERRUPT == 0):
+                    if (mpu.p & mpu.INTERRUPT == 0) and mpu.IRQ_pin:
+                        if db_console.kbhit():
+                            mpu.memory[self.VIA_IFR] |= 0x04
+                            mpu.IRQ_pin = 0
+                            count_irq = 0   # we need a short delay here
+                            while count_irq < 100:
+                                count_irq += 1
+                else:
+                    time.sleep(0.001)
 
         self.mpu.memory.subscribe_to_write([self.VIA_IER], SR_enable)
         self.mpu.memory.subscribe_to_read([self.VIA_SR], getc)

@@ -29,7 +29,7 @@ from py65.utils.conversions import itoa
 from py65.memory import ObservableMemory
 
 from py65816.devices.mpu65c816 import MPU as CMOS65C816
-from py65816.devices.db_mpu65c02 import MPU as DB65C816
+from py65816.devices.db_mpu65c02 import MPU as DB65C02
 from py65816.db_server import db_server as server
 from py65816.db_disassembler import dbDisassembler as Disassembler
 from py65816.db_assembler import dbAssembler as Assembler
@@ -38,7 +38,7 @@ from py65816.interrupts import Interrupts
 class dbMonitor(Monitor):
 
     Monitor.Microprocessors["65C816"] = CMOS65C816
-    Monitor.Microprocessors["DB65C02"] = DB65C816
+    Monitor.Microprocessors["DB65C02"] = DB65C02
 
     def __init__(self, argv=None, stdin=None, stdout=None,
                        mpu_type=CMOS65C816, memory=None,
