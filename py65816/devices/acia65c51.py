@@ -29,6 +29,9 @@ class ACIA():
         self.bbuffer = 0
         self.bcount = 1024
         self.block_file = filename
+        self.status_reg = 0
+        self.control_reg = 0
+        self.command_reg = 0
 
         # init
         self.reset()
@@ -67,7 +70,8 @@ class ACIA():
                 # This works with a startup time of about 3 minutes
                 if (mpu.IRQ_pin == 1) and (mpu.p & mpu.INTERRUPT == 0):
                     mpu.IRQ_pin = 0
-                    mpu.memory[self.STATUSR] |= 0x88 # set Receiver Data Register Full flag (bit 3) status register
+#                    mpu.memory[self.STATUSR] |= 0x88 # set Receiver Data Register Full flag (bit 3) status register
+                    self.status_reg |= 0x88 # set Receiver Data Register Full flag (bit 3) status register
 
                     count += 1
                 else:
@@ -117,11 +121,25 @@ class ACIA():
             else:
                 byte = self.bbuffer[self.bcount]
                 self.bcount += 1
-                self.mpu.memory[self.STATUSR] &= 0x77 # clear Receiver Data Register Full flag (bit 3) status register
+#                self.mpu.memory[self.STATUSR] &= 0x77 # clear Receiver Data Register Full flag (bit 3) status register
+                self.status_reg &= 0x77 # clear Receiver Data Register Full flag (bit 3) status register
                 return byte
+
+        def aciaReset_callback(address, value):
+            self.reset()
+
+        def aciaStatus_callback(address):
+            tmp = self.status_reg
+            self.status_reg &= 0x7f # clear interrupt flag (bit 7) in status register
+            return tmp
 
         self.mpu.memory.subscribe_to_write([self.TDATAR], dataT_callback)
         self.mpu.memory.subscribe_to_read([self.RDATAR], dataR_callback)
 
+        self.mpu.memory.subscribe_to_write([self.STATUSR], aciaReset_callback)
+        self.mpu.memory.subscribe_to_read([self.STATUSR], aciaStatus_callback)
+
     def reset(self):
-        self.mpu.memory[self.STATUSR] = 0
+        self.status_reg = 0
+        self.control_reg = 0
+        # self.command_reg = 0
