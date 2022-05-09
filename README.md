@@ -38,7 +38,7 @@ Options:
 -g, --goto <address>              : Perform a goto command after loading any files
 -i, --input <address>             : define location of getc (default $f004)
 -o, --output <address>            : define location of putc (default $f001)
--d, --debug                       : Open debug window
+-w, --debug                       : Open debug window
 -v, --via <address>               : Add a VIA at address
 -a, --acia "<address> <filename>" : Add an ACIA at address with filename for block access
 ````
