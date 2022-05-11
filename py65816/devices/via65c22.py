@@ -71,6 +71,10 @@ class VIA():
                             count_irq = 0   # we need a short delay here
                             while count_irq < 100:
                                 count_irq += 1
+                        else:
+                            # pause to reduce system resources churning when
+                            # we're waiting for keyboard input
+                            time.sleep(0.05)
                 else:
                     time.sleep(0.001)
 

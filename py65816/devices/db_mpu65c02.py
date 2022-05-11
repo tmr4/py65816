@@ -1,3 +1,5 @@
+import time
+
 from py65.devices import mpu65c02
 
 class MPU(mpu65c02.MPU):
@@ -10,6 +12,12 @@ class MPU(mpu65c02.MPU):
     def step(self):
         if self.waiting:
             self.processorCycles += 1
+            if (self.IRQ_pin == 0):
+                self.waiting = False
+            else:
+                # pause to reduce system resources churning when
+                # we're waiting for keyboard input
+                time.sleep(0.05) 
         else:
             if (self.IRQ_pin == 0) and (self.p & self.INTERRUPT == 0):
                 self.irq()

@@ -1,3 +1,5 @@
+import time
+
 from py65.utils.conversions import itoa
 from py65.utils.devices import make_instruction_decorator
 
@@ -87,6 +89,12 @@ class MPU:
     def step(self):
         if self.waiting:
             self.processorCycles += 1
+            if (self.IRQ_pin == 0):
+                self.waiting = False
+            else:
+                # pause to reduce system resources churning when
+                # we're waiting for keyboard input
+                time.sleep(0.05) 
         else:
             if (self.IRQ_pin == 0) and (self.p & self.INTERRUPT == 0):
                 self.irq()
