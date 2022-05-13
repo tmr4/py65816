@@ -211,7 +211,10 @@ class dbMonitor(Monitor):
         self.byteWidth = self._mpu.BYTE_WIDTH
         self.addrFmt = self._mpu.ADDR_FORMAT
         self.byteFmt = self._mpu.BYTE_FORMAT
-        self.addrMask = self._mpu.addrMask
+        if self._mpu.ADDRL_WIDTH > self._mpu.ADDR_WIDTH:
+            self.addrMask = self._mpu.addrMaskL
+        else:
+            self.addrMask = self._mpu.addrMask
         self.byteMask = self._mpu.byteMask
         if getc_addr and putc_addr:
             self._install_mpu_observers(getc_addr, putc_addr)
@@ -228,7 +231,34 @@ class dbMonitor(Monitor):
             except:
                 print('Uncaught error, breaking to monitor ...')
         else:
-            super()._run(stopcodes)
+#            super()._run(stopcodes)
+            stopcodes = set(stopcodes)
+            breakpoints = set(self._breakpoints)
+            mpu = self._mpu
+            mem = self._mpu.memory
+
+            if not breakpoints:
+                while True:
+                    mpu.step()
+                    if self._mpu.ADDRL_WIDTH > self._mpu.ADDR_WIDTH:
+                        pc = (mpu.pbr << mpu.ADDR_WIDTH) + mpu.pc
+                    else:
+                        pc = mpu.pc
+                    if mem[pc] in stopcodes:
+                        break
+            else:
+                while True:
+                    mpu.step()
+                    if self._mpu.ADDRL_WIDTH > self._mpu.ADDR_WIDTH:
+                        pc = (mpu.pbr << mpu.ADDR_WIDTH) + mpu.pc
+                    else:
+                        pc = mpu.pc
+                    if mem[pc] in stopcodes:
+                        break
+                    if pc in breakpoints:
+                        msg = "Breakpoint %d reached."
+                        self._output(msg % self._breakpoints.index(pc))
+                        break
 
     def _usage(self):
         usage = __doc__ % sys.argv[0]
@@ -244,14 +274,17 @@ class dbMonitor(Monitor):
 
         def getc(address):
             char = console.getch_noblock(self.stdin)
-            time.sleep(.1) # reduce cpu usage (~55% to ~2%) in Forth interpret loop (comment out for full speed ops)
+#            time.sleep(.1) # reduce cpu usage (~55% to ~2%) in Forth interpret loop (comment out for full speed ops)
             if char:
                 byte = ord(char)
             else:
                 byte = 0
             return byte
 
-        m = ObservableMemory(subject=self.memory, addrWidth=self.addrWidth)
+        if self._mpu.ADDRL_WIDTH > self._mpu.ADDR_WIDTH:
+            m = ObservableMemory(subject=self.memory, addrWidth=self._mpu.ADDRL_WIDTH)
+        else:
+            m = ObservableMemory(subject=self.memory, addrWidth=self.addrWidth)
         m.subscribe_to_write([self.putc_addr], putc)
         m.subscribe_to_read([self.getc_addr], getc)
 

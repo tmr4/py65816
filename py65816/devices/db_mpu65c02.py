@@ -3,6 +3,8 @@ import time
 from py65.devices import mpu65c02
 
 class MPU(mpu65c02.MPU):
+    ADDRL_WIDTH = 16
+
     def __init__(self, *args, **kwargs):
         mpu65c02.MPU.__init__(self, *args, **kwargs)
         self.name = 'db65C02'

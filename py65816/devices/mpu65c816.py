@@ -58,7 +58,7 @@ class MPU:
         self.processorCycles = 0
 
         if memory is None:
-            memory = 0x10000 * [0x00]
+            memory = 0x40000 * [0x00]
         self.memory = memory
         #self.start_pc = 0xfffc
         self.start_pc = pc

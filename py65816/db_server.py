@@ -141,7 +141,10 @@ class db_server():
         mem = mpu.memory
 
         while self.step():
-            pc = mpu.pc
+            if mpu.ADDRL_WIDTH > mpu.ADDR_WIDTH:
+                pc = (mpu.pbr << mpu.ADDR_WIDTH) + mpu.pc
+            else:
+                pc = mpu.pc
             if mem[pc] in self.stopcodes:
                 if self.dbOpt != 1 and self.SThread:
                     self.sendMsg(f"Stopcode {itoa(mem[pc], 16)} hit at {itoa(pc, 16)} ")
