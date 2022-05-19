@@ -1566,7 +1566,7 @@ class MPU:
     def inst_0x22(self):
         self.stPush(self.pbr)
         self.stPushWord((self.pc + 2) & self.addrMask)
-        pbr = self.ByteAt(self.pc + 2)
+        pbr = self.ByteAt((self.pbr << self.ADDR_WIDTH) + self.pc + 2)
         self.pc = self.OperandWord()
         self.pbr = pbr
 
@@ -1940,7 +1940,7 @@ class MPU:
 
     @instruction(name="JML", mode="abl", cycles=4)  # new to 65816
     def inst_0x5c(self):
-        pbr = self.ByteAt(self.pc + 2)
+        pbr = self.ByteAt((self.pbr << self.ADDR_WIDTH) + self.pc + 2)
         self.pc = self.OperandWord()
         self.pbr = pbr
 
