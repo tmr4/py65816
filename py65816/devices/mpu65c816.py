@@ -1292,7 +1292,7 @@ class MPU:
 
     def opSTZ(self, x):
         addr = x()
-        if (self.p & self.IRS) or self.mode:
+        if self.p & self.MS:
             self.memory[addr] = 0x00
         else:
             self.memory[addr] = 0x00
