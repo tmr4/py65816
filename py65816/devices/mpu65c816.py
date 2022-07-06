@@ -795,7 +795,7 @@ class MPU:
             tbyte = (tbyte << 1) & self.addrMask
 
         if tbyte:
-            if tbyte & self.NEGATIVE:
+            if self.p & self.MS:
                 self.p |= tbyte & self.NEGATIVE
             else:
                 self.p |= (tbyte >> self.BYTE_WIDTH) & self.NEGATIVE
