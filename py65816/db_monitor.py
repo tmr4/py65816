@@ -144,7 +144,7 @@ class dbMonitor(Monitor):
                 win = True
 
             if opt in ('-v', '--via'):
-                via = int(value, 16)
+                via = value
 
             if opt in ('-a', '--acia'):
                 acia = value
@@ -161,15 +161,13 @@ class dbMonitor(Monitor):
         self._output("Open debug window.")
 
     def do_via(self, args):
-        if args == '':
+        split = shlex.split(args)
+        if len(split) != 1:
+            self._output(args)
             return self.help_via()
 
-        if isinstance(args, str):
-            addr = self._address_parser.number(args)
-        else:
-            addr = args
+        addr = int(split[0], 16)
 
-        #addr = int(args, 16)
         if self.dbInt is None:
             self.dbInt = Interrupts(self, self._mpu)
 
@@ -185,10 +183,8 @@ class dbMonitor(Monitor):
             self._output(args)
             return self.help_acia()
 
-        filename = split[1]
-
-        #addr = self._address_parser.number(args)
         addr = int(split[0], 16)
+        filename = split[1]
 
         if self.dbInt is None:
             self.dbInt = Interrupts(self, self._mpu)
@@ -239,6 +235,8 @@ class dbMonitor(Monitor):
 
             if not breakpoints:
                 while True:
+                    if self.dbInt.enabled:
+                         self.dbInt.trip()
                     mpu.step()
                     if self._mpu.ADDRL_WIDTH > self._mpu.ADDR_WIDTH:
                         pc = (mpu.pbr << mpu.ADDR_WIDTH) + mpu.pc
@@ -248,6 +246,8 @@ class dbMonitor(Monitor):
                         break
             else:
                 while True:
+                    if self.dbInt.enabled:
+                         self.dbInt.trip()
                     mpu.step()
                     if self._mpu.ADDRL_WIDTH > self._mpu.ADDR_WIDTH:
                         pc = (mpu.pbr << mpu.ADDR_WIDTH) + mpu.pc
@@ -274,7 +274,6 @@ class dbMonitor(Monitor):
 
         def getc(address):
             char = console.getch_noblock(self.stdin)
-#            time.sleep(.1) # reduce cpu usage (~55% to ~2%) in Forth interpret loop (comment out for full speed ops)
             if char:
                 byte = ord(char)
             else:

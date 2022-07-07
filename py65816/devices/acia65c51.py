@@ -1,6 +1,4 @@
 import sys
-import time
-import threading
 
 from py65816.utils import db_console
 
@@ -15,11 +13,12 @@ class ACIA():
     FRAMING = 2
     PARITY = 1
 
-    def __init__(self, start_addr, filename, mpu, monitor):
+    def __init__(self, start_addr, filename, mpu, monitor, interrupt):
 
         self.name = 'ACIA'
         self.mpu = mpu
-        self.mon = monitor        
+        self.mon = monitor
+        self.int = interrupt
         self.RDATAR = start_addr
         self.TDATAR = start_addr
         self.STATUSR = start_addr + 1
@@ -32,6 +31,8 @@ class ACIA():
         self.status_reg = 0
         self.control_reg = 0
         self.command_reg = 0
+        self.enabled = False
+        self.oldenabled = False
 
         # init
         self.reset()
@@ -39,43 +40,6 @@ class ACIA():
         self.install_interrupts()
 
     def install_interrupts(self):
-        def dataT_enable(address, value):
-            t = threading.Thread(target=dataT_thread, daemon = True)
-            t.start()
-
-        def dataT_thread():
-            mpu = self.mpu
-            self.bcount = 0
-            count = 0
-
-            # request an interrupt to process each byte in block
-            while count < 1024:
-                # Given the serial nature of the block transfer, we need to ensure that the previous
-                # interrupt has been processed before requesting another.  We can do this by using an 
-                # appropirately timed delay or setting/checking a flag to indicate the interrupt service
-                # routine has completed.
-
-                # Using a sleep timer for the delay isn't desirable because the timing isn't guaranteed.
-                # However, interestingly, they seem to allow a faster startup than using a status flag.
-                # Using a timer instead of the status flag check, here and for the VIA,
-                # actually speeds startup by about a half minute.
-#                time.sleep(.005) # this delay works w/ startup taking about 2.5 minutes, shorter
-                                  # delays don't increase startup speed materially
-
-                # Alternatively we can check the interrupt status flag assuming it remains set until the
-                # interrupt service routine has completed, thus nested interrupts aren't possible.
-                # They likely aren't possible with the time delay above either but may be possible
-                # with a longer delay.
-                # This works well with VSCode debug, unclear if the sleep delay works with debug
-                # This works with a startup time of about 3 minutes
-                if (mpu.IRQ_pin == 1) and (mpu.p & mpu.INTERRUPT == 0):
-                    mpu.IRQ_pin = 0
-#                    mpu.memory[self.STATUSR] |= 0x88 # set Receiver Data Register Full flag (bit 3) status register
-                    self.status_reg |= 0x88 # set Receiver Data Register Full flag (bit 3) status register
-
-                    count += 1
-                else:
-                    time.sleep(0.001) # don't notice much change in startup time with or without this
 
         def dataT_callback(address, value):
             try:
@@ -91,10 +55,7 @@ class ACIA():
                         self.bbuffer = fo.read(1024)
                         fo.close()
 
-                        # callbacks occur within a step and before pc has been fully incremented
-                        # IRQs finish the current instruction before jumping to the servicing
-                        # routine, thus we can't call step again from here to run through the routine
-                        dataT_enable(address, value)
+                        self.dataT_enable()
 
                         self.block = False
                         self.escape = False
@@ -121,7 +82,6 @@ class ACIA():
             else:
                 byte = self.bbuffer[self.bcount]
                 self.bcount += 1
-#                self.mpu.memory[self.STATUSR] &= 0x77 # clear Receiver Data Register Full flag (bit 3) status register
                 self.status_reg &= 0x77 # clear Receiver Data Register Full flag (bit 3) status register
                 return byte
 
@@ -143,3 +103,20 @@ class ACIA():
         self.status_reg = 0
         self.control_reg = 0
         # self.command_reg = 0
+
+    def dataT_thread(self):
+        mpu = self.mpu
+        if self.bcount < 1024:
+            if (mpu.IRQ_pin == 1) and (mpu.p & mpu.INTERRUPT == 0):
+                mpu.IRQ_pin = 0
+                self.status_reg |= 0x88 # set Receiver Data Register Full flag (bit 3) status register
+        else:
+            self.enabled = False
+            self.int.enabled = self.oldenabled
+
+    def dataT_enable(self):
+        self.enabled = True
+        self.oldenabled = self.int.enabled
+        self.int.enabled = True
+        self.bcount = 0
+

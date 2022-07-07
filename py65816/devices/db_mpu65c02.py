@@ -19,7 +19,7 @@ class MPU(mpu65c02.MPU):
             else:
                 # pause to reduce system resources churning when
                 # we're waiting for keyboard input
-                time.sleep(0.05) 
+                time.sleep(0.005) 
         else:
             if (self.IRQ_pin == 0) and (self.p & self.INTERRUPT == 0):
                 self.irq()
